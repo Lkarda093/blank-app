@@ -6,7 +6,7 @@ Data: 11/10/2026. Ambiente Linux, Python 3.12.14, Node 24.19.0. Dependências ef
 | --- | --- |
 | Compilação Python (`compileall`) | Passou |
 | Sintaxe Bash (`bash -n scripts/start.sh`) | Passou |
-| Backend (`pytest -q`) | 28 testes passaram |
+| Backend (`pytest -q`) | 30 testes passaram |
 | Cliente JavaScript (`npm test`) | 5 testes passaram |
 | Frontend (`npm run build`) | Compilação concluída |
 | Dependências de produção JS (`npm audit --omit=dev --audit-level=high`) | 0 vulnerabilidades reportadas naquele momento; não equivale a auditoria de segurança completa |
@@ -75,3 +75,7 @@ Build observado: JavaScript aproximadamente 239 kB (75 kB gzip), CSS aproximadam
 ## Aceitação remota pendente
 
 O código da integração Gemini é real, mas sucesso de HTTP simulado não comprova disponibilidade, cota ou autorização no Google. Para concluir a aceitação remota, configure sua chave/modelo, envie uma mensagem pelo aplicativo normal e confirme a resposta. Consulte custos e limites no projeto Google antes de gerar conteúdo. Nenhuma versão seguinte foi implementada.
+
+## Correção de configuração em 11/10/2026
+
+Corrigido o caminho de leitura de backend/.env: a configuração usava a pasta principal do projeto. Dois testes adicionais verificam que a raiz é backend e que o arquivo é lido mesmo quando o terminal está em outra pasta. A suíte Python completa passou com 30 testes após a correção.
