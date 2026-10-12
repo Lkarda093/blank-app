@@ -12,6 +12,7 @@ from .providers.gemini import GeminiProvider
 from .auth.routes import router as auth_router
 from .memory.routes import router as memory_router
 from .data.routes import router as data_router
+from .documents.routes import router as documents_router
 
 
 def create_app(settings: Settings | None = None, provider=None):
@@ -25,12 +26,13 @@ def create_app(settings: Settings | None = None, provider=None):
             app.state.provider = provider or GeminiProvider(client, app.state.settings.api_key)
             yield
 
-    app = FastAPI(title="Aurora API", version="0.3.2", lifespan=lifespan,
+    app = FastAPI(title="Aurora API", version="0.4.0", lifespan=lifespan,
                   description="API pessoal. Use Authorize com o token do proprietário. Um único processo/worker.")
     app.include_router(router)
     app.include_router(auth_router)
     app.include_router(memory_router)
     app.include_router(data_router)
+    app.include_router(documents_router)
 
     @app.middleware("http")
     async def headers(request: Request, call_next):
@@ -53,7 +55,7 @@ def create_app(settings: Settings | None = None, provider=None):
 
     @app.get("/api/health")
     def health():
-        return {"status": "ok", "version": "0.3.2"}
+        return {"status": "ok", "version": "0.4.0"}
 
     return app
 

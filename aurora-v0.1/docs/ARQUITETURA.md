@@ -74,3 +74,9 @@ Escritas via cookie exigem X-Aurora-Request: 1 e, se houver Origin, origem corre
 Backup portátil: 16 MiB, 10.000 conversas e 100.000 pares, limites adicionais por campo. Para bancos maiores, cópia manual SQLite com a aplicação parada. As 20 recuperações mais recentes são exibidas; as demais permanecem em disco. Não há expurgo automático nem criptografia própria.
 
 Busca é literal e não é semântica. Preferências não treinam o modelo. A aplicação não consulta saldo/custos do Google. Conteúdo continua texto simples. Voz, documentos, plugins, outros provedores, avatar e agente local não fazem parte da 0.2; módulos futuros dependem de autorização.
+
+## Documentos — 0.4
+
+`app/documents` recebe bytes sem multipart, valida nome/extensão/tamanho, extrai PDF em processo separado e grava originais BLOB e páginas JSON no SQLite. `conversation_documents` mantém vínculos; `turn_document_context` guarda seleção e referências para reenvio e histórico. A API envia ao provedor apenas textos selecionados, tratados como dados, com rótulos de página. Referências são conferidas contra páginas enviadas e expostas com prévia, sem alegação de verificação semântica.
+
+O frontend separa Biblioteca, painel de anexos e prévia em componentes carregados sob demanda. Upload não chama o provedor. O backup schema 3 guarda documentos e contexto, valida originais e aceita leitura de schema 2. A migração para SQLite schema 3 é aditiva, com cópia anterior.

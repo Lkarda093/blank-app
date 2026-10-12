@@ -36,3 +36,9 @@ export async function download(path, filename) {
   const response = await request(path, null);
   saveFile(await response.blob(), filename);
 }
+
+export async function uploadDocument(file) {
+  if (!file || !file.size || file.size > 3 * 1024 * 1024) throw new Error('O arquivo deve ter conteúdo e no máximo 3 MB.');
+  if (!/\.(pdf|txt)$/i.test(file.name)) throw new Error('Envie somente PDF ou TXT UTF-8.');
+  return api(`/documents?name=${encodeURIComponent(file.name)}`, null, {method:'POST',body:file,headers:{'Content-Type':'application/octet-stream'}});
+}

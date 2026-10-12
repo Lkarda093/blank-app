@@ -1,10 +1,12 @@
-# Aurora 0.3.2 — assistente pessoal
+# Aurora 0.4 — assistente pessoal
 
 Uma base pequena para sua assistente: React + Vite + Tailwind CSS, FastAPI, Gemini e histórico SQLite. Interface em português, clara/escura, responsiva, com histórico à esquerda ou à direita. Esta é uma nova implementação; não modifica nem migra automaticamente projetos Streamlit ou o pacote Aurora anterior.
 
-**Já usa a 0.2? Comece por [Atualizar para 0.3](docs/ATUALIZAR_0.3.md).** Se ainda usa a 0.1, veja também [a migração para 0.2](docs/ATUALIZAR_0.2.md). Para uma instalação nova, siga a seção 2. A pasta e branch continuam chamadas `aurora-v0.1` para facilitar a atualização. Nenhuma versão seguinte será implementada sem sua autorização.
+**Já usa a 0.3? Comece por [Atualizar para 0.4](docs/ATUALIZAR_0.4.md).** Para uma instalação nova, siga a seção 2. A pasta e branch continuam chamadas `aurora-v0.1`. Nenhuma versão seguinte será implementada sem sua autorização.
 
 ## 1. O que está implementado
+
+A 0.4 inclui PDF/TXT no chat e Biblioteca funcional: upload limitado, prévia do texto por página, busca, seleção explícita com consentimento, respostas com referências verificáveis e exclusão. Backups schema 3 incluem os originais e aceitam restauração de schema 2; a migração cria uma cópia anterior do SQLite. Consulte [as instruções e os limites](docs/ATUALIZAR_0.4.md).
 
 A 0.3.2 inclui troca automática por cota (429) entre modelos de uma lista explicitamente autorizada no servidor, com até três modelos por mensagem, opção no navegador e indicação do modelo efetivo. Configure `GEMINI_FREE_FALLBACK_MODELS` conforme [as instruções](docs/ATUALIZAR_0.3.md). O aplicativo não consulta preços nem garante gratuidade; não ativa faturamento.
 
@@ -22,7 +24,7 @@ Recursos mantidos da 0.2: busca e renomeação de conversas; exportação em TXT
 - Erros para configuração ausente, cota, permissão, modelo indisponível, conexão, timeout e resposta bloqueada.
 - Contexto limitado, paginação do histórico e proteção contra duplicação de envios concluídos.
 
-**Não implementado:** voz, anexos, imagens/vídeos, pesquisa web, biblioteca, Obsidian, plugins, usuários adicionais, agente local e outros provedores. As páginas de expansão indicam desenvolvimento; os controles de upload/execução ainda não estão disponíveis. As respostas são texto simples; Markdown e código aparecem como texto, sem execução ou HTML.
+**Não implementado:** voz, OCR, DOCX/planilhas, imagens/vídeos, pesquisa web, pastas na Biblioteca, Obsidian, plugins, usuários adicionais, agente local e outros provedores. As demais páginas de expansão indicam desenvolvimento; sua execução continua indisponível. As respostas são texto simples; Markdown e código aparecem como texto, sem execução ou HTML.
 
 ## 2. Primeiro uso no GitHub Codespaces
 
@@ -274,3 +276,7 @@ As condições do provedor podem mudar. Esta base não promete disponibilidade d
 Restauração: `X-Aurora-Confirm: RESTAURAR`, `X-Aurora-Revision: REVISAO` e `X-Aurora-Preview: TICKET` retornados pela prévia; se houver preferências, `X-Aurora-Preferences-Consent: 1`. O ticket vincula o arquivo conferido à revisão atual. Arquivo alterado, dados modificados ou confirmação ausente impedem a substituição. A interface cuida de tudo isso.
 
 Testes opcionais de navegador: instale temporariamente Playwright no frontend conforme docs/VALIDACAO.md e execute `python scripts/browser_test.py` com as portas livres e a venv ativada. O harness cria banco temporário e usa exclusivamente o provedor explicitamente simulado de testes.
+
+## Documentos e backups da 0.4
+
+A Biblioteca fica no mesmo SQLite: arquivos originais, páginas extraídas, vínculos e referências. Use Configurações → Dados para backup completo. Ao copiar o banco manualmente com a aplicação parada, você preserva os documentos junto das conversas. O JSON novo tem limite de 32 MiB e schema 3; backups schema 2 antigos continuam aceitos, sem arquivos. PDFs são processados localmente em subprocesso com limites; apenas textos escolhidos e autorizados entram no Gemini. Ver [validação da 0.4](docs/VALIDACAO_0.4.md).

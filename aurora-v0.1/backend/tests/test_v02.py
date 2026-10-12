@@ -83,7 +83,7 @@ def test_backup_restore_roundtrip_with_recovery_and_session_preserved(setup):
     c,s,_=setup; cid=create(c);send(c,cid,'Dados que serão restaurados')
     c.put('/api/preferences',json={'name':'Ana','consent':True})
     backup=c.get('/api/data/backup').json()
-    assert set(backup)=={'format','schema_version','exported_at','conversations','turns','preferences'}
+    assert set(backup)=={'format','schema_version','exported_at','conversations','turns','preferences','documents','attachments','document_contexts'}
     assert TOKEN not in json.dumps(backup) and s.api_key not in json.dumps(backup)
     c.delete(f'/api/conversations/{cid}?confirm=true'); newer=create(c)
     info=preview(c,backup)
@@ -225,9 +225,9 @@ def test_migrates_real_v01_database_and_preserves_safety_copy(tmp_path):
     db.commit();db.close()
     initialize(path)
     with connect(path) as db:
-        assert db.execute('PRAGMA user_version').fetchone()[0]==2
+        assert db.execute('PRAGMA user_version').fetchone()[0]==3
         assert db.execute('SELECT user_text FROM turns').fetchone()[0]=='Oi'
-    copies=list((tmp_path/'backups').glob('before-upgrade-v0.2-*.sqlite3'))
+    copies=list((tmp_path/'backups').glob('before-upgrade-v0.4-*.sqlite3'))
     assert len(copies)==1
     with connect(copies[0]) as db:
         assert db.execute('PRAGMA user_version').fetchone()[0]==1

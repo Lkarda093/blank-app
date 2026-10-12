@@ -8,12 +8,13 @@ from ..database import connect, bump_revision
 from ..providers.base import ProviderError
 from ..memory.routes import preference_instruction
 from ..data.routes import download
+from ..documents.routes import selected_context, answer_sources, DOC_INSTRUCTION
 import json
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_owner)])
 
-def turn_result(turn, requested_model):
-    return {"messages": messages_from_turns([turn]), "model_used": turn["model"],
+def turn_result(turn, requested_model, db):
+    return {"messages": messages_from_turns([turn], db), "model_used": turn["model"],
             "requested_model": requested_model, "fallback_used": turn["model"] != requested_model}
 
 def now():
@@ -25,11 +26,20 @@ def require_conversation(db, cid):
         raise HTTPException(404, "Conversa não encontrada.")
     return dict(row)
 
-def messages_from_turns(turns):
+def messages_from_turns(turns, db=None):
     messages = []
     for t in turns:
         for role in ("user", "assistant"):
-            messages.append({"id": f'{t["id"]}-{role}', "role": role, "content": t[f"{role}_text"], "created_at": t["created_at"], "model": t["model"]})
+            message={"id": f'{t["id"]}-{role}', "role": role, "content": t[f"{role}_text"], "created_at": t["created_at"], "model": t["model"]}
+            if db is not None and role == 'assistant':
+                context=db.execute('SELECT * FROM turn_document_context WHERE turn_id=?',(t['id'],)).fetchone()
+                if context:
+                    message['documents_used']=json.loads(context['documents_json'])
+                    message['sources']=json.loads(context['sources_json'])
+                    for source in message['sources']:
+                        source['available']=db.execute('SELECT 1 FROM documents WHERE id=?',(source['document_id'],)).fetchone() is not None
+                    message['source_warning']=context['warning']
+            messages.append(message)
     return messages
 
 class SendMessage(BaseModel):
@@ -37,6 +47,8 @@ class SendMessage(BaseModel):
     model: str = Field(min_length=1, max_length=100)
     request_id: UUID
     allow_fallback: bool = False
+    document_ids: list[UUID] = Field(default_factory=list, max_length=3)
+    documents_consent: bool = False
 
     @field_validator("content")
     @classmethod
@@ -48,7 +60,7 @@ class SendMessage(BaseModel):
 @router.get("/config")
 def config(request: Request):
     s = request.app.state.settings
-    return {"version": "0.3.2", "provider": "Gemini", "models": s.models,
+    return {"version": "0.4.0", "provider": "Gemini", "models": s.models,
             "free_fallback_models": s.free_fallback_models, "fallback_max_models": 3,
             "configured": bool(s.api_key and s.models), "max_message_chars": 8000,
             "context_turns": 10, "context_chars": 40000,
@@ -101,9 +113,19 @@ def export(cid: UUID, request: Request, format: str = Query("json", pattern="^(j
         db.execute("BEGIN")
         conversation = require_conversation(db, cid)
         turns = db.execute("SELECT * FROM turns WHERE conversation_id=? ORDER BY id", (str(cid),)).fetchall()
-        messages = messages_from_turns(turns)
+        messages = messages_from_turns(turns, db)
     if format == "txt":
-        text = conversation["title"] + "\n\n" + "\n\n".join(f'{"Você" if m["role"] == "user" else "Aurora"} ({m["created_at"]}):\n{m["content"]}' for m in messages)
+        blocks=[]
+        for m in messages:
+            block=f'{"Você" if m["role"] == "user" else "Aurora"} ({m["created_at"]}):\n{m["content"]}'
+            if m.get('documents_used'):
+                block+='\n\nDocumentos enviados: '+ '; '.join(f'{d["label"]}: {d["name"]}' for d in m['documents_used'])
+            if m.get('sources'):
+                block+='\nReferências indicadas: '+ '; '.join(f'{r["name"]}, p. {r["page"]}'+(' (excluído)' if not r['available'] else '') for r in m['sources'])
+            if m.get('source_warning'):
+                block+='\nAviso: '+m['source_warning']
+            blocks.append(block)
+        text=conversation['title']+'\n\n'+'\n\n'.join(blocks)
         return download(text, f"aurora-conversa-{cid}.txt", "text/plain")
     return download(json.dumps({"format": "aurora-conversation", "version": 1, "conversation": conversation, "messages": messages}, ensure_ascii=False, indent=2), f"aurora-conversa-{cid}.json")
 
@@ -113,7 +135,7 @@ def get_conversation(cid: UUID, request: Request, before: int | None = Query(Non
         conversation = require_conversation(db, cid)
         turns = db.execute("SELECT * FROM turns WHERE conversation_id=? AND id<? ORDER BY id DESC LIMIT 51", (str(cid), before if before is not None else 9223372036854775807)).fetchall()
         page = turns[:50]
-        return {**conversation, "messages": messages_from_turns(reversed(page)), "next_before": page[-1]["id"] if len(turns) > 50 else None}
+        return {**conversation, "messages": messages_from_turns(reversed(page), db), "next_before": page[-1]["id"] if len(turns) > 50 else None}
 
 @router.delete("/conversations/{cid}", status_code=204)
 async def delete_conversation(cid: UUID, request: Request, confirm: bool = False):
@@ -138,18 +160,26 @@ async def send_message(cid: UUID, payload: SendMessage, request: Request):
         with connect(state.settings.database) as db:
             require_conversation(db, cid)
             existing = db.execute("SELECT * FROM turns WHERE conversation_id=? AND request_id=?", (str(cid), str(payload.request_id))).fetchone()
+            document_request=json.dumps({'ids':[str(did) for did in payload.document_ids],'consent':bool(payload.document_ids and payload.documents_consent)},sort_keys=True)
             if existing:
+                old_context=db.execute('SELECT request_json FROM turn_document_context WHERE turn_id=?',(existing['id'],)).fetchone()
+                old_request=old_context['request_json'] if old_context else json.dumps({'ids':[],'consent':False},sort_keys=True)
+                if old_request != document_request:
+                    raise HTTPException(409,"Identificador de envio já usado com outra seleção de documentos.")
                 origin = db.execute("SELECT requested_model FROM request_origins WHERE turn_id=?", (existing["id"],)).fetchone()
                 requested_model = origin["requested_model"] if origin else existing["model"]
                 if existing["user_text"] != payload.content or requested_model != payload.model:
                     raise HTTPException(409, "Identificador de envio já usado para outra mensagem.")
-                return turn_result(existing, requested_model)
-            personalization = preference_instruction(db)
+                return turn_result(existing, requested_model, db)
+            document_body, documents_used, allowed_sources = selected_context(db,cid,payload.document_ids,payload.documents_consent)
+            personalization = preference_instruction(db) + (DOC_INSTRUCTION if documents_used else '')
             turns = list(reversed(db.execute("SELECT * FROM turns WHERE conversation_id=? ORDER BY id DESC LIMIT 10", (str(cid),)).fetchall()))
         # Keep full pairs and bound cost; old history remains in SQLite.
-        while turns and sum(len(t["user_text"]) + len(t["assistant_text"]) for t in turns) + len(payload.content) > 40000:
+        while turns and sum(len(t["user_text"]) + len(t["assistant_text"]) for t in turns) + len(payload.content) + len(document_body) > 40000:
             turns.pop(0)
-        context = messages_from_turns(turns) + [{"role": "user", "content": payload.content}]
+        if len(payload.content) + len(document_body) > 40000:
+            raise HTTPException(400,"O texto selecionado e a pergunta excedem o limite de contexto. Selecione menos documentos ou reduza a pergunta.")
+        context = messages_from_turns(turns) + [{"role": "user", "content": payload.content + document_body}]
         models = [payload.model]
         approved = state.settings.free_fallback_models
         if payload.allow_fallback and payload.model in approved:
@@ -176,6 +206,9 @@ async def send_message(cid: UUID, payload: SendMessage, request: Request):
             raise HTTPException(504, "A troca de modelos demorou demais. Confira o histórico antes de reenviar; chamadas podem ter consumido cota.") from None
         except ProviderError as exc:
             raise HTTPException(exc.status, exc.message) from None
+        sources,source_warning=answer_sources(answer,allowed_sources) if documents_used else ([], '')
+        if any(d.get('unreadable_pages') for d in documents_used):
+            source_warning=(source_warning+' Páginas sem texto foram omitidas; a resposta pode não cobrir todo o PDF.').strip()
         timestamp = now()
         with connect(state.settings.database) as db:
             db.execute("INSERT INTO turns(conversation_id, request_id, user_text, assistant_text, model, created_at) VALUES (?, ?, ?, ?, ?, ?)", (str(cid), str(payload.request_id), payload.content, answer, used_model, timestamp))
@@ -183,4 +216,6 @@ async def send_message(cid: UUID, payload: SendMessage, request: Request):
             bump_revision(db)
             turn = db.execute("SELECT * FROM turns WHERE conversation_id=? AND request_id=?", (str(cid), str(payload.request_id))).fetchone()
             db.execute("INSERT INTO request_origins(turn_id, requested_model) VALUES (?, ?)", (turn["id"], payload.model))
-            return turn_result(turn, payload.model)
+            if documents_used:
+                db.execute('INSERT INTO turn_document_context VALUES(?,?,?,?,?)',(turn['id'],document_request,json.dumps(documents_used,ensure_ascii=False),json.dumps(sources,ensure_ascii=False),source_warning))
+            return turn_result(turn, payload.model, db)

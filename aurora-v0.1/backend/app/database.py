@@ -26,12 +26,12 @@ def initialize(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
     with connect(path) as db:
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version > 2:
+        if version > 3:
             raise RuntimeError("Banco de uma versão mais nova. Não faça downgrade sem restaurar um backup compatível.")
-        if version == 1:
+        if version in (1, 2):
             folder = path.parent / "backups"
             folder.mkdir(mode=0o700, exist_ok=True)
-            backup_path = folder / f"before-upgrade-v0.2-{uuid4()}.sqlite3"
+            backup_path = folder / f"before-upgrade-v0.4-{uuid4()}.sqlite3"
             descriptor = os.open(backup_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             os.close(descriptor)
             target = sqlite3.connect(backup_path)
@@ -66,5 +66,18 @@ def initialize(path: Path):
         db.execute("INSERT OR IGNORE INTO metadata VALUES ('data_revision','0')")
         db.execute("CREATE TABLE IF NOT EXISTS preferences (id INTEGER PRIMARY KEY CHECK(id=1), name TEXT NOT NULL, response_style TEXT NOT NULL, notes TEXT NOT NULL)")
         db.execute("CREATE TABLE IF NOT EXISTS sessions (digest TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)")
-        db.execute("PRAGMA user_version = 2")
+        db.execute("""CREATE TABLE IF NOT EXISTS documents (
+            id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('pdf','txt')),
+            size_bytes INTEGER NOT NULL, sha256 TEXT NOT NULL UNIQUE, original BLOB NOT NULL,
+            pages_json TEXT NOT NULL, page_count INTEGER NOT NULL, char_count INTEGER NOT NULL,
+            created_at TEXT NOT NULL)""")
+        db.execute("""CREATE TABLE IF NOT EXISTS conversation_documents (
+            conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+            document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            PRIMARY KEY(conversation_id,document_id))""")
+        db.execute("""CREATE TABLE IF NOT EXISTS turn_document_context (
+            turn_id INTEGER PRIMARY KEY REFERENCES turns(id) ON DELETE CASCADE,
+            request_json TEXT NOT NULL, documents_json TEXT NOT NULL,
+            sources_json TEXT NOT NULL, warning TEXT NOT NULL)""")
+        db.execute("PRAGMA user_version = 3")
     path.chmod(0o600)

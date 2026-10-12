@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory(prefix="aurora-e2e-") as folder:
                     time.sleep(0.1)
             else:
                 raise RuntimeError("Servidores de teste não iniciaram.")
-            subprocess.run(["node", str(root / "frontend/tests/browser-smoke.cjs")], cwd=root, check=True, timeout=180)
+            subprocess.run(["node", str(root / "frontend/tests/browser-smoke.cjs")], cwd=root, check=True, timeout=240, env=dict(os.environ,AURORA_TEST_PYTHON=sys.executable))
         finally:
             frontend.terminate()
             backend.terminate()
