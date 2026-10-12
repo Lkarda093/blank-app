@@ -1,4 +1,4 @@
-import asyncio
+from asyncio import timeout as generation_timeout
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -11,6 +11,10 @@ from ..data.routes import download
 import json
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_owner)])
+
+def turn_result(turn, requested_model):
+    return {"messages": messages_from_turns([turn]), "model_used": turn["model"],
+            "requested_model": requested_model, "fallback_used": turn["model"] != requested_model}
 
 def now():
     return datetime.now(timezone.utc).isoformat()
@@ -32,6 +36,7 @@ class SendMessage(BaseModel):
     content: str = Field(min_length=1, max_length=8000)
     model: str = Field(min_length=1, max_length=100)
     request_id: UUID
+    allow_fallback: bool = False
 
     @field_validator("content")
     @classmethod
@@ -43,7 +48,8 @@ class SendMessage(BaseModel):
 @router.get("/config")
 def config(request: Request):
     s = request.app.state.settings
-    return {"version": "0.3.1", "provider": "Gemini", "models": s.models,
+    return {"version": "0.3.2", "provider": "Gemini", "models": s.models,
+            "free_fallback_models": s.free_fallback_models, "fallback_max_models": 3,
             "configured": bool(s.api_key and s.models), "max_message_chars": 8000,
             "context_turns": 10, "context_chars": 40000,
             "cost_notice": "A API pode ter cotas e custos. O aplicativo não consulta saldo nem garante uso gratuito. Confira seu projeto no Google AI Studio."}
@@ -133,23 +139,48 @@ async def send_message(cid: UUID, payload: SendMessage, request: Request):
             require_conversation(db, cid)
             existing = db.execute("SELECT * FROM turns WHERE conversation_id=? AND request_id=?", (str(cid), str(payload.request_id))).fetchone()
             if existing:
-                if existing["user_text"] != payload.content or existing["model"] != payload.model:
+                origin = db.execute("SELECT requested_model FROM request_origins WHERE turn_id=?", (existing["id"],)).fetchone()
+                requested_model = origin["requested_model"] if origin else existing["model"]
+                if existing["user_text"] != payload.content or requested_model != payload.model:
                     raise HTTPException(409, "Identificador de envio já usado para outra mensagem.")
-                return {"messages": messages_from_turns([existing])}
+                return turn_result(existing, requested_model)
             personalization = preference_instruction(db)
             turns = list(reversed(db.execute("SELECT * FROM turns WHERE conversation_id=? ORDER BY id DESC LIMIT 10", (str(cid),)).fetchall()))
         # Keep full pairs and bound cost; old history remains in SQLite.
         while turns and sum(len(t["user_text"]) + len(t["assistant_text"]) for t in turns) + len(payload.content) > 40000:
             turns.pop(0)
         context = messages_from_turns(turns) + [{"role": "user", "content": payload.content}]
+        models = [payload.model]
+        approved = state.settings.free_fallback_models
+        if payload.allow_fallback and payload.model in approved:
+            models += [m for m in approved if m != payload.model][:2]
+        used_model = payload.model
+        tried = []
         try:
-            answer = await state.provider.generate(payload.model, context, personalization=personalization)
+            # One total budget, one stored turn, and no unapproved model discovery.
+            async with generation_timeout(70):
+                for used_model in models:
+                    tried.append(used_model)
+                    try:
+                        answer = await state.provider.generate(used_model, context, personalization=personalization)
+                        break
+                    except ProviderError as exc:
+                        if exc.status != 429:
+                            raise
+                        if used_model == models[-1]:
+                            detail = exc.message
+                            if len(tried) > 1:
+                                detail = "Cota ou limite atingido nos modelos autorizados tentados: " + ", ".join(tried) + ". Aguarde a renovação dos limites."
+                            raise ProviderError(429, detail) from None
+        except TimeoutError:
+            raise HTTPException(504, "A troca de modelos demorou demais. Confira o histórico antes de reenviar; chamadas podem ter consumido cota.") from None
         except ProviderError as exc:
             raise HTTPException(exc.status, exc.message) from None
         timestamp = now()
         with connect(state.settings.database) as db:
-            db.execute("INSERT INTO turns(conversation_id, request_id, user_text, assistant_text, model, created_at) VALUES (?, ?, ?, ?, ?, ?)", (str(cid), str(payload.request_id), payload.content, answer, payload.model, timestamp))
+            db.execute("INSERT INTO turns(conversation_id, request_id, user_text, assistant_text, model, created_at) VALUES (?, ?, ?, ?, ?, ?)", (str(cid), str(payload.request_id), payload.content, answer, used_model, timestamp))
             db.execute("UPDATE conversations SET title=CASE WHEN title='Nova conversa' AND (SELECT COUNT(*) FROM turns WHERE conversation_id=?)=1 THEN ? ELSE title END, updated_at=? WHERE id=?", (str(cid), payload.content[:60], timestamp, str(cid)))
             bump_revision(db)
             turn = db.execute("SELECT * FROM turns WHERE conversation_id=? AND request_id=?", (str(cid), str(payload.request_id))).fetchone()
-            return {"messages": messages_from_turns([turn])}
+            db.execute("INSERT INTO request_origins(turn_id, requested_model) VALUES (?, ?)", (turn["id"], payload.model))
+            return turn_result(turn, payload.model)

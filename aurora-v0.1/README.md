@@ -1,10 +1,12 @@
-# Aurora 0.3 — assistente pessoal
+# Aurora 0.3.2 — assistente pessoal
 
 Uma base pequena para sua assistente: React + Vite + Tailwind CSS, FastAPI, Gemini e histórico SQLite. Interface em português, clara/escura, responsiva, com histórico à esquerda ou à direita. Esta é uma nova implementação; não modifica nem migra automaticamente projetos Streamlit ou o pacote Aurora anterior.
 
 **Já usa a 0.2? Comece por [Atualizar para 0.3](docs/ATUALIZAR_0.3.md).** Se ainda usa a 0.1, veja também [a migração para 0.2](docs/ATUALIZAR_0.2.md). Para uma instalação nova, siga a seção 2. A pasta e branch continuam chamadas `aurora-v0.1` para facilitar a atualização. Nenhuma versão seguinte será implementada sem sua autorização.
 
 ## 1. O que está implementado
+
+A 0.3.2 inclui troca automática por cota (429) entre modelos de uma lista explicitamente autorizada no servidor, com até três modelos por mensagem, opção no navegador e indicação do modelo efetivo. Configure `GEMINI_FREE_FALLBACK_MODELS` conforme [as instruções](docs/ATUALIZAR_0.3.md). O aplicativo não consulta preços nem garante gratuidade; não ativa faturamento.
 
 Novidades da correção 0.3.1: Aurora Cosmic UI baseada nas referências; saudação, data/hora local, seis cartões, provedores e compositor compacto; navegação/histórico à esquerda, menu móvel recolhível e opção de painel direito. Configurações unifica preferências, aparência e dados, incluindo backup. Tema automático, cor de destaque, efeitos e modelo preferido ficam salvos neste navegador. Módulos futuros têm páginas explícitas de desenvolvimento, sem arquivos ou conexões fictícias. Não altera o esquema do banco nem adiciona dependências.
 

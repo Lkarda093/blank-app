@@ -22,3 +22,5 @@
 @media(min-width:1051px){.task-card{padding:12px 10px;min-height:80px}.task-card strong{font-size:10px}.task-card small{font-size:8px}.task-card em{font-size:7px}}
 @media(max-width:600px){.composer-tools{flex-wrap:wrap;gap:4px}.composer-tools>button{padding:4px 5px;font-size:8px}}
 @media(max-width:360px){.composer-tool span{display:none}}
+
+.fallback-notice{font-size:11px;line-height:1.7;color:var(--accent);border:1px solid var(--line);border-radius:8px;background:var(--glass);padding:10px 12px;margin-bottom:10px;overflow-wrap:anywhere}.message-model{font-size:9px;font-weight:400;color:var(--muted);max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

@@ -1,10 +1,10 @@
-# Validação — Aurora 0.3.1
+# Validação — Aurora 0.3.2
 
 Execução concluída em 12/10/2026. Linux, Python 3.12.14 e Node 24.19.0. Versões instaladas fixadas nos requisitos e package-lock.
 
 | Verificação | Resultado |
 | --- | --- |
-| Testes Python completos | 65 passaram após a correção Gemini |
+| Testes Python completos | 79 passaram com troca automática por cota |
 | Cliente JavaScript | 6 passaram |
 | Compilação Python e sintaxe Bash | Passaram |
 | Build React/Vite/Tailwind | Concluído |
@@ -90,3 +90,9 @@ Não foi realizado benchmark de RAM/carga, teste em Android físico, Safari, Fir
 ## Falhas intermitentes Gemini
 
 Oito casos adicionais testaram recuperação após 500/503 com corpo de mensagem preservado, espera exponencial limitada, encerramento após três falhas, código HTTP sem conteúdo privado, ausência de repetição após sucesso/cota/modelo/timeouts/conexão e cancelamento real por deadline. Total: 65 testes Python passaram. O transporte HTTP foi simulado; não foi usada a chave do proprietário nem se comprovou a causa específica do erro relatado. As verificações anteriores de frontend permanecem aplicáveis porque esta correção não altera a interface.
+
+## Troca automática por cota
+
+14 novos casos do backend cobrem configuração explícita da lista, seleção de alternativas apenas após 429, limitação a três modelos, falhas sem gravação parcial, ausência de troca por outros erros, toggle desligado e compatibilidade de clientes anteriores, modelo efetivo no SQLite/backup, reenvio idempotente após troca e reinício, conflito de payload, deadline geral com liberação da trava e exclusão em cascata dos metadados auxiliares. Total: 79 testes Python.
+
+O fluxo Chromium também verifica aviso de troca, seletor atualizado, modelo efetivo visível após reload, opção desligada impedindo troca e reativação salvando apenas um novo par de mensagens. O backend de QA simula cota em test-model e sucesso em test-alternate; nenhum modelo real ou custo foi usado. A chamada real e a elegibilidade gratuita precisam ser conferidas no projeto do proprietário.

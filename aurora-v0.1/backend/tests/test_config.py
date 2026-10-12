@@ -25,3 +25,15 @@ def test_loads_backend_env_from_another_working_directory(tmp_path, monkeypatch)
     assert settings.models == ("test-model",)
     assert len(settings.owner_token) >= 32
     assert settings.database == backend / "data" / "aurora.sqlite3"
+
+
+def test_fallback_list_is_explicit_subset(tmp_path,monkeypatch):
+    import pytest
+    monkeypatch.setattr(config,'ROOT',tmp_path)
+    monkeypatch.setenv('AURORA_OWNER_TOKEN','test-owner-token-with-more-than-32-characters')
+    monkeypatch.setenv('GEMINI_MODELS','primary,alternate')
+    monkeypatch.setenv('GEMINI_FREE_FALLBACK_MODELS','alternate,primary,alternate')
+    assert config.Settings.load().free_fallback_models==('alternate','primary')
+    monkeypatch.setenv('GEMINI_FREE_FALLBACK_MODELS','not-authorized')
+    with pytest.raises(ValueError,match='somente modelos autorizados'):
+        config.Settings.load()

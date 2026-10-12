@@ -59,6 +59,7 @@ def initialize(path: Path):
         );
         CREATE INDEX IF NOT EXISTS turns_conversation ON turns(conversation_id, id);
         ''')
+        db.execute("CREATE TABLE IF NOT EXISTS request_origins (turn_id INTEGER PRIMARY KEY REFERENCES turns(id) ON DELETE CASCADE, requested_model TEXT NOT NULL)")
         # Transactional, additive migration: existing conversation/turn columns stay intact.
         db.execute("BEGIN IMMEDIATE")
         db.execute("CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")

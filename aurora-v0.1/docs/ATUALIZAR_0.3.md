@@ -1,6 +1,6 @@
 # Atualizar para Aurora 0.3
 
-A 0.3.1 corrige a composição visual da interface e mantém os recursos da 0.2. A pasta e a ramificação continuam chamadas `aurora-v0.1`. O `.env`, a chave Gemini, o token e o histórico existentes são preservados. Não há novas dependências de produção nem mudança no esquema do banco.
+A 0.3.2 mantém a composição Cosmic UI e acrescenta troca automática por cota, preservando os recursos da 0.2. A pasta e a ramificação continuam chamadas `aurora-v0.1`. O `.env`, a chave Gemini, o token e o histórico existentes são preservados. Não há novas dependências de produção. Uma tabela auxiliar de reenvio é criada; as colunas e os dados existentes são preservados.
 
 ## Atualização no Codespaces
 
@@ -70,3 +70,21 @@ O adaptador repete somente respostas HTTP 500 e 503, com até três tentativas e
 Se persistir a falha, o aviso mostra o código HTTP e o número de tentativas. Isso não garante disponibilidade do Google. Nenhuma troca de modelo ou chave é realizada. As tentativas adicionais são chamadas reais ao provedor, sujeitas às condições da conta. Uma resposta bem-sucedida continua gerando um único par de mensagens no histórico.
 
 Para aplicar esta correção de backend, pare com Ctrl + C, execute `git pull --ff-only origin aurora-v0.1` na pasta do projeto e inicie novamente com `bash scripts/start.sh`. Não é necessário reinstalar as dependências da interface para esta alteração.
+
+## Troca automática por cota — 0.3.2
+
+A opção fica em Configurações → Modelos de IA. Para funcionar, o servidor deve ter pelo menos dois modelos em `GEMINI_FREE_FALLBACK_MODELS`; essa lista precisa ser um subconjunto de `GEMINI_MODELS`. Vazio mantém a troca desativada. Não há descoberta automática de preços, ativação de faturamento ou inclusão automática de todos os modelos do catálogo.
+
+Para o projeto gratuito mostrado pelo proprietário, os dois modelos de texto indicados foram `gemini-3.8-flash` e `gemini-3.6-flash`. Depois de atualizar e parar a Aurora, na pasta do projeto execute:
+
+```bash
+.venv/bin/python -c "from dotenv import set_key; modelos='gemini-3.6-flash,gemini-3.8-flash'; set_key('backend/.env', 'GEMINI_MODELS', modelos); set_key('backend/.env', 'GEMINI_FREE_FALLBACK_MODELS', modelos); print('Lista de alternativas autorizadas salva.')"
+```
+
+Reinicie com `bash scripts/start.sh`, recarregue a interface e confira a opção em Configurações → Modelos de IA. Ela vem ligada neste navegador quando há mais de um modelo autorizado, mas pode ser desligada. O modelo preferido é tentado primeiro; a troca ocorre somente após erro 429 e tenta até dois outros da lista, dentro de um prazo total de 70 segundos. Falhas de conexão, permissão, modelo e timeout não iniciam troca.
+
+A resposta informa qual modelo foi usado; se houve troca, um aviso aparece e o seletor passa para o modelo que respondeu. O histórico, JSON exportado e backup preservam o modelo efetivo. Nenhuma resposta parcial é salva se todas as opções falharem. Erros 500/503 continuam com as tentativas limitadas do adaptador; não acionam outro modelo.
+
+Uma tabela auxiliar de identidade de reenvio é criada sem alterar ou apagar as colunas existentes. Ela evita duplicação quando uma resposta de um modelo alternativo já foi concluída. Conversas antigas continuam compatíveis. O backup JSON mantém schema 2 e o modelo efetivo; a tabela auxiliar de reenvios não faz parte do backup portátil. Após restaurar, o frontend inicia novos identificadores de envio; reenvios de identificadores antigos com um modelo inicial diferente podem retornar conflito, sem gerar mensagens duplicadas.
+
+A autorização de modelos gratuitos é manual: os nomes não provam gratuidade. Confira o nível e as cotas do seu projeto. Se o faturamento for ativado depois, os mesmos modelos podem gerar custos. A Aurora não liga faturamento nem altera o projeto. A troca não oferece uso ilimitado e pode não resolver limites compartilhados.

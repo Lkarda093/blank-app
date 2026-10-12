@@ -15,6 +15,8 @@ function chooseModel(cfg){const preferred=stored('aurora-model','');return cfg.m
 const navItems=[['chat','Chats','chat'],['agents','Agentes e IAs','spark'],['plugins','Plugins','plugin'],['library','Biblioteca','folder'],['tools','Ferramentas','tools'],['computer','Computador','computer'],['organization','Organização','organize'],['settings','Configurações','settings']];
 export default function App(){
  const [theme,setTheme]=useState(()=>{try{const v=localStorage.getItem('aurora-theme');return ['auto','light','dark'].includes(v)?v:'dark';}catch{return 'dark';}});
+ const [fallbackEnabled,setFallbackEnabled]=usePreference('aurora-auto-fallback',true);
+ const [modelNotice,setModelNotice]=useState('');
  const [accent,setAccent]=usePreference('aurora-accent','violet');
  const [effects,setEffects]=usePreference('aurora-effects',true);
  const [historySide,setHistorySide]=usePreference('aurora-history-side','left');
@@ -67,13 +69,13 @@ export default function App(){
     await perform(async () => {
       const data = await api(`/conversations/${id}`, token);
       setActive(data); setMessages(data.messages); setNextBefore(data.next_before);
-      setDraft(''); retry.current = null; setRenaming(false); setView('chat'); setSidebar(false);
+      setDraft(''); setModelNotice(''); retry.current = null; setRenaming(false); setView('chat'); setSidebar(false);
     });
   }
   async function newConversation() {
     await perform(async () => {
       const data = await api('/conversations', token, { method: 'POST' });
-      setActive(data); setMessages([]); setNextBefore(null); setDraft(''); retry.current = null;
+      setActive(data); setMessages([]); setNextBefore(null); setModelNotice(''); setDraft(''); retry.current = null;
       setQuery(''); setSearchInput(''); await refreshList(null, ''); setRenaming(false); setView('chat'); setSidebar(false);
     });
   }
@@ -82,19 +84,21 @@ export default function App(){
     const text = draft.trim();
     if (!text || !config?.configured || !model) return;
     await perform(async () => {
-      setSending(true);
+      setSending(true); setModelNotice('');
       try {
         let conversation = active;
         if (!conversation) {
           conversation = await api('/conversations', token, { method: 'POST' });
           setActive(conversation); setConversations(old => [conversation, ...old]);
         }
-        if (!retry.current || retry.current.content !== text || retry.current.model !== model || retry.current.cid !== conversation.id) {
-          retry.current = { content: text, model, cid: conversation.id, request_id: crypto.randomUUID() };
+        const allow_fallback = fallbackEnabled && (config.free_fallback_models || []).includes(model) && (config.free_fallback_models || []).length > 1;
+        if (!retry.current || retry.current.content !== text || retry.current.model !== model || retry.current.cid !== conversation.id || retry.current.allow_fallback !== allow_fallback) {
+          retry.current = { content: text, model, allow_fallback, cid: conversation.id, request_id: crypto.randomUUID() };
         }
         const { cid, ...payload } = retry.current;
         const result = await api(`/conversations/${cid}/messages`, token, { method: 'POST', body: JSON.stringify(payload) });
         setMessages(old => [...old.filter(m => !result.messages.some(n => n.id === m.id)), ...result.messages]);
+        if (result.fallback_used) { setModel(result.model_used); setModelNotice(`A cota de ${result.requested_model} foi atingida. Aurora respondeu com ${result.model_used}.`); }
         setDraft(''); retry.current = null;
         setActive(old => ({ ...old, title: old.title === 'Nova conversa' ? text.slice(0, 60) : old.title }));
         await refreshList();
@@ -104,7 +108,7 @@ export default function App(){
   }
   function clearAccount() {
     setAuthenticated(false); setConfig(null); setConversations([]); setMessages([]); setActive(null);
-    setDraft(''); setError(''); setView('chat'); setSidebar(false); setDeleteTarget(null); setProfile({name:''}); retry.current = null;
+    setDraft(''); setError(''); setModelNotice(''); setView('chat'); setSidebar(false); setDeleteTarget(null); setProfile({name:''}); retry.current = null;
   }
   async function logout() { await perform(async () => { await api('/auth/logout',null,{method:'POST'}); clearAccount(); }); }
   useEffect(() => {
@@ -137,8 +141,8 @@ export default function App(){
  {view==='chat'?<div className={`chat-page ${messages.length?'has-messages':'is-home'}`}>
  {active&&messages.length>0&&<div className="conversation-toolbar"><span className="conversation-title" title={active.title}>{active.title}</span><button className="subtle" disabled={busy} onClick={()=>{setRenameValue(active.title);setRenaming(!renaming);}}>Renomear</button><button className="subtle" disabled={busy} onClick={()=>perform(()=>download(`/conversations/${active.id}/export?format=txt`,'aurora-conversa.txt'))}>Exportar TXT</button><button className="subtle" disabled={busy} onClick={()=>perform(()=>download(`/conversations/${active.id}/export?format=json`,'aurora-conversa.json'))}>Exportar JSON</button></div>}
  {renaming&&active&&<form className="rename-form" onSubmit={e=>{e.preventDefault();perform(async()=>{const updated=await api(`/conversations/${active.id}`,null,{method:'PATCH',body:JSON.stringify({title:renameValue})});setActive(updated);setRenaming(false);await refreshList();});}}><label className="sr-only" htmlFor="conversation-title">Título da conversa</label><input id="conversation-title" className="text-input" value={renameValue} maxLength={120} onChange={e=>setRenameValue(e.target.value)} disabled={busy}/><button className="subtle" disabled={busy||!renameValue.trim()}>Salvar título</button><button type="button" className="subtle" onClick={()=>setRenaming(false)} disabled={busy}>Cancelar</button></form>}
- <div className="conversation-scroll">{messages.length===0?<Home name={profile.name} onPrompt={prompt} onPlanned={setPlanned} onAgents={openAgents} busy={busy} configured={config.configured}/>:<section className="messages" aria-label="Mensagens">{nextBefore&&<button className="subtle" disabled={busy} onClick={()=>perform(async()=>{const data=await api(`/conversations/${active.id}?before=${nextBefore}`);setMessages(old=>[...data.messages,...old]);setNextBefore(data.next_before);})}>Carregar mensagens anteriores</button>}{messages.map(message=><article className={`message ${message.role}`} key={message.id}><div className="message-label">{message.role==='assistant'?<><Mark small/>Aurora</>:<><span className="tiny-avatar">EU</span>Você</>}<time>{new Date(message.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</time></div><div className="message-content">{message.content}</div></article>)}</section>}{sending&&<p role="status" className="thinking">Aurora está preparando uma resposta<span className="pulse">…</span></p>}<div ref={end}/></div>
- <div className="composer-wrap">{planned&&<div className="planned-notice" role="status"><Icon name="tools" size={16}/><span>{planned} está em desenvolvimento. Nesta versão, o chat recebe somente texto.</span><button aria-label="Fechar aviso" onClick={()=>setPlanned('')}><Icon name="close" size={14}/></button></div>}{!config.configured&&<p className="setup-notice">Configure a chave e o modelo no servidor para conversar. Veja Configurações → Modelos de IA.</p>}
+ <div className="conversation-scroll">{messages.length===0?<Home name={profile.name} onPrompt={prompt} onPlanned={setPlanned} onAgents={openAgents} busy={busy} configured={config.configured}/>:<section className="messages" aria-label="Mensagens">{nextBefore&&<button className="subtle" disabled={busy} onClick={()=>perform(async()=>{const data=await api(`/conversations/${active.id}?before=${nextBefore}`);setMessages(old=>[...data.messages,...old]);setNextBefore(data.next_before);})}>Carregar mensagens anteriores</button>}{messages.map(message=><article className={`message ${message.role}`} key={message.id}><div className="message-label">{message.role==='assistant'?<><Mark small/>Aurora</>:<><span className="tiny-avatar">EU</span>Você</>}{message.role==='assistant'&&<span className="message-model">{message.model}</span>}<time>{new Date(message.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</time></div><div className="message-content">{message.content}</div></article>)}</section>}{sending&&<p role="status" className="thinking">Aurora está preparando uma resposta<span className="pulse">…</span></p>}<div ref={end}/></div>
+ <div className="composer-wrap">{modelNotice&&<p role="status" className="fallback-notice">{modelNotice}</p>}{planned&&<div className="planned-notice" role="status"><Icon name="tools" size={16}/><span>{planned} está em desenvolvimento. Nesta versão, o chat recebe somente texto.</span><button aria-label="Fechar aviso" onClick={()=>setPlanned('')}><Icon name="close" size={14}/></button></div>}{!config.configured&&<p className="setup-notice">Configure a chave e o modelo no servidor para conversar. Veja Configurações → Modelos de IA.</p>}
  <form className="composer" onSubmit={send}><label className="sr-only" htmlFor="message">Sua mensagem</label><textarea ref={input} id="message" placeholder="Digite sua mensagem aqui…" maxLength={8000} value={draft} disabled={busy} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();send(e);}}} rows={2}/><div className="composer-bottom"><div className="composer-tools"><button type="button" aria-label="Adicionar anexos: em desenvolvimento" title="Anexos em desenvolvimento" onClick={()=>setPlanned('Anexos')}><Icon name="plus" size={16}/></button>{[['Arquivos','file'],['Imagem','image'],['Pesquisa','search']].map(([title,icon])=><button type="button" className="composer-tool" key={title} aria-label={title} title="Em desenvolvimento" onClick={()=>setPlanned(title)}><Icon name={icon} size={13}/><span>{title}</span></button>)}<button type="button" className="composer-tool" onClick={()=>navigate('tools')}><Icon name="tools" size={13}/><span>Ferramentas</span></button></div><div className="model-choice"><Icon name="spark" size={15}/><label className="sr-only" htmlFor="model">Modelo Gemini</label><select id="model" value={model} onChange={e=>setModel(e.target.value)} disabled={busy||!config.models.length}>{config.models.length?config.models.map(m=><option key={m}>{m}</option>):<option value="">Gemini · não configurado</option>}</select></div><button className="send-button" type="submit" aria-label="Enviar mensagem" disabled={busy||!draft.trim()||!config.configured}><Icon name="send" size={20}/></button></div></form>
  {messages.length===0&&<QuickActions onPrompt={prompt} busy={busy}/>}<p className="composer-note">Aurora pode cometer erros. Confira informações importantes.<span> Enter envia · Shift + Enter quebra linha</span></p></div></div>:
  view==='agents'?<Agents key={agentSearch} config={config} model={model} onModel={setModel} onUse={()=>prompt(null)} initial={agentSearch} busy={busy}/>:
@@ -146,7 +150,7 @@ export default function App(){
  view==='plugins'||view==='tools'?<Tools key={view} plugins={view==='plugins'}/>:
  view==='computer'?<Computer/>:
  view==='organization'?<Organization onBackup={()=>{setSettingsTab('Dados');navigate('settings');}}/>:
- <SettingsPanel tab={settingsTab} onTab={setSettingsTab} theme={theme} onTheme={setTheme} accent={accent} onAccent={setAccent} effects={effects} onEffects={setEffects} historySide={historySide} onHistorySide={setHistorySide} config={config} model={model} onModel={setModel} run={perform} busy={busy} profile={profile} onPreferences={setProfile} onLogout={logout} onConfig={async()=>{const cfg=await api('/config');setConfig(cfg);setModel(cfg.models.includes(model)?model:chooseModel(cfg));}} onRestored={async()=>{setActive(null);setMessages([]);setDraft('');setNextBefore(null);retry.current=null;setQuery('');setSearchInput('');setRenaming(false);await refreshList(null,'');const prefs=await api('/preferences');setProfile(prefs.saved||{name:''});}}/>}
+ <SettingsPanel fallbackEnabled={fallbackEnabled} onFallback={setFallbackEnabled} tab={settingsTab} onTab={setSettingsTab} theme={theme} onTheme={setTheme} accent={accent} onAccent={setAccent} effects={effects} onEffects={setEffects} historySide={historySide} onHistorySide={setHistorySide} config={config} model={model} onModel={setModel} run={perform} busy={busy} profile={profile} onPreferences={setProfile} onLogout={logout} onConfig={async()=>{const cfg=await api('/config');setConfig(cfg);setModel(cfg.models.includes(model)?model:chooseModel(cfg));}} onRestored={async()=>{setActive(null);setMessages([]);setDraft('');setNextBefore(null);retry.current=null;setQuery('');setSearchInput('');setRenaming(false);await refreshList(null,'');const prefs=await api('/preferences');setProfile(prefs.saved||{name:''});}}/>}
  </Suspense></main>
  {historySide==='right'&&!compact&&rightOpen&&<aside className="right-history" aria-label="Painel direito de conversas"><div className="right-history-heading"><h2>Conversas</h2><button aria-label="Recolher histórico" onClick={()=>setRightOpen(false)}><Icon name="close" size={16}/></button></div>{searchForm}<History {...historyProps}/></aside>}
  {deleteTarget&&<div className="modal-backdrop" onKeyDown={e=>{if(e.key==='Escape'&&!busy)setDeleteTarget(null);if(e.key==='Tab'){const elements=[...e.currentTarget.querySelectorAll('button:not(:disabled)')];if(!elements.length){e.preventDefault();return;}const first=elements[0],last=elements[elements.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}}}><section role="dialog" aria-modal="true" aria-labelledby="delete-title" className="modal"><h2 id="delete-title">Excluir esta conversa?</h2>{error&&<p role="alert" className="error">{error}</p>}<p>“{deleteTarget.title}” e suas mensagens serão apagadas. Esta ação não pode ser desfeita.</p><div className="action-row"><button id="cancel-delete" className="subtle" disabled={busy} onClick={()=>setDeleteTarget(null)}>Cancelar</button><button className="danger" disabled={busy} onClick={()=>perform(async()=>{await api(`/conversations/${deleteTarget.id}?confirm=true`,null,{method:'DELETE'});setConversations(old=>old.filter(c=>c.id!==deleteTarget.id));if(active?.id===deleteTarget.id){setActive(null);setMessages([]);setDraft('');setNextBefore(null);retry.current=null;}setDeleteTarget(null);})}>Excluir conversa</button></div></section></div>}
