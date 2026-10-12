@@ -80,3 +80,14 @@ Busca é literal e não é semântica. Preferências não treinam o modelo. A ap
 `app/documents` recebe bytes sem multipart, valida nome/extensão/tamanho, extrai PDF em processo separado e grava originais BLOB e páginas JSON no SQLite. `conversation_documents` mantém vínculos; `turn_document_context` guarda seleção e referências para reenvio e histórico. A API envia ao provedor apenas textos selecionados, tratados como dados, com rótulos de página. Referências são conferidas contra páginas enviadas e expostas com prévia, sem alegação de verificação semântica.
 
 O frontend separa Biblioteca, painel de anexos e prévia em componentes carregados sob demanda. Upload não chama o provedor. O backup schema 3 guarda documentos e contexto, valida originais e aceita leitura de schema 2. A migração para SQLite schema 3 é aditiva, com cópia anterior.
+
+
+## Workspace 0.6
+
+O módulo `app/workspace` gerencia perfis customizados, projetos, memórias consentidas, vínculos de documentos e contexto por conversa. Cinco perfis padrão ficam no código. Tabelas adicionais no schema 4 preservam a estrutura original de conversations/turns. Há cópia SQLite antes da migração.
+
+Cada envio valida a revisão de contexto e registra perfil/projeto efetivos em turn_workspace. Reenvios devolvem a resposta salva com o mesmo contexto solicitado, mesmo após alterações ou exclusão de perfis. Memórias têm escopo global ou de projeto; desativação remove-as do contexto futuro. Um teto de 8 mil caracteres impede truncamento silencioso da memória.
+
+Resumos são gerados em lotes, revisados e salvos explicitamente com marcador de cobertura. O histórico original não é alterado. Todas as mutações compartilham o lock de geração e invalidam as prévias de restauração. Os backups schema 4 validam relações, IDs e marcadores de resumo; schemas 2/3 são importados com valores padrão.
+
+O frontend usa react-markdown e remark-gfm sem HTML bruto, sem carregar imagens externas e com links HTTP(S). Rascunhos são locais, separados pelo workspace_id do servidor e pela conversa; não incluem seleção ou consentimento de documentos. Busca literal de trechos opera no SQLite/texto extraído sem chamadas ao Gemini.

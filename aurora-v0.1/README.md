@@ -1,3 +1,9 @@
+# Aurora 0.6
+
+Perfis prontos e personalizados, projetos, memória editável, resumos de continuidade revisados, busca nos documentos e chat com Markdown e rascunhos persistentes.
+
+**Atualização e guia de uso:** [Atualizar para 0.6](docs/ATUALIZAR_0.6.md). Esta entrega reúne as etapas 0.5 e 0.6; as seções históricas abaixo documentam a evolução anterior.
+
 # Aurora 0.4 — assistente pessoal
 
 Uma base pequena para sua assistente: React + Vite + Tailwind CSS, FastAPI, Gemini e histórico SQLite. Interface em português, clara/escura, responsiva, com histórico à esquerda ou à direita. Esta é uma nova implementação; não modifica nem migra automaticamente projetos Streamlit ou o pacote Aurora anterior.

@@ -9,6 +9,7 @@ from ..providers.base import ProviderError
 from ..memory.routes import preference_instruction
 from ..data.routes import download
 from ..documents.routes import selected_context, answer_sources, DOC_INSTRUCTION
+from ..workspace.routes import context_instruction, read_context
 import json
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_owner)])
@@ -32,6 +33,8 @@ def messages_from_turns(turns, db=None):
         for role in ("user", "assistant"):
             message={"id": f'{t["id"]}-{role}', "role": role, "content": t[f"{role}_text"], "created_at": t["created_at"], "model": t["model"]}
             if db is not None and role == 'assistant':
+                workspace=db.execute('SELECT context_json FROM turn_workspace WHERE turn_id=?',(t['id'],)).fetchone()
+                if workspace: message['workspace']=json.loads(workspace['context_json'])
                 context=db.execute('SELECT * FROM turn_document_context WHERE turn_id=?',(t['id'],)).fetchone()
                 if context:
                     message['documents_used']=json.loads(context['documents_json'])
@@ -49,6 +52,7 @@ class SendMessage(BaseModel):
     allow_fallback: bool = False
     document_ids: list[UUID] = Field(default_factory=list, max_length=3)
     documents_consent: bool = False
+    context_revision: int | None = Field(default=None,ge=0)
 
     @field_validator("content")
     @classmethod
@@ -60,21 +64,23 @@ class SendMessage(BaseModel):
 @router.get("/config")
 def config(request: Request):
     s = request.app.state.settings
-    return {"version": "0.4.0", "provider": "Gemini", "models": s.models,
+    with connect(s.database) as db:
+        workspace_id=db.execute("SELECT value FROM metadata WHERE key='workspace_id'").fetchone()[0]
+    return {"workspace_id":workspace_id,"version": "0.6.0", "provider": "Gemini", "models": s.models,
             "free_fallback_models": s.free_fallback_models, "fallback_max_models": 3,
             "configured": bool(s.api_key and s.models), "max_message_chars": 8000,
             "context_turns": 10, "context_chars": 40000,
             "cost_notice": "A API pode ter cotas e custos. O aplicativo não consulta saldo nem garante uso gratuito. Confira seu projeto no Google AI Studio."}
 
 @router.get("/conversations")
-def list_conversations(request: Request, offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=100), q: str = Query("", max_length=200)):
+def list_conversations(request: Request, offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=100), q: str = Query("", max_length=200), project_id: UUID | None = None):
     # Literal substring search: %, _ and SQL text have no wildcard meaning.
     with connect(request.app.state.settings.database) as db:
-        return [dict(r) for r in db.execute("""SELECT c.* FROM conversations c
-            WHERE instr(casefold(c.title),casefold(?))>0 OR EXISTS (
+        return [dict(r) for r in db.execute("""SELECT c.*,w.project_id,w.profile_id FROM conversations c LEFT JOIN conversation_context w ON w.conversation_id=c.id
+            WHERE (? IS NULL OR w.project_id=?) AND ( instr(casefold(c.title),casefold(?))>0 OR EXISTS (
                 SELECT 1 FROM turns t WHERE t.conversation_id=c.id
-                AND (instr(casefold(t.user_text),casefold(?))>0 OR instr(casefold(t.assistant_text),casefold(?))>0))
-            ORDER BY c.updated_at DESC,c.id LIMIT ? OFFSET ?""", (q, q, q, limit, offset))]
+                AND (instr(casefold(t.user_text),casefold(?))>0 OR instr(casefold(t.assistant_text),casefold(?))>0)))
+            ORDER BY c.updated_at DESC,c.id LIMIT ? OFFSET ?""", (str(project_id) if project_id else None,str(project_id) if project_id else None,q, q, q, limit, offset))]
 
 @router.post("/conversations", status_code=201)
 async def create_conversation(request: Request):
@@ -84,6 +90,7 @@ async def create_conversation(request: Request):
         cid, timestamp = str(uuid4()), now()
         with connect(request.app.state.settings.database) as db:
             db.execute("INSERT INTO conversations VALUES (?, ?, ?, ?)", (cid, "Nova conversa", timestamp, timestamp))
+            db.execute("INSERT OR IGNORE INTO conversation_context VALUES(?,'general',NULL,'equilibrado',1,0,'',0)",(cid,))
             bump_revision(db)
             return require_conversation(db, cid)
 
@@ -162,6 +169,10 @@ async def send_message(cid: UUID, payload: SendMessage, request: Request):
             existing = db.execute("SELECT * FROM turns WHERE conversation_id=? AND request_id=?", (str(cid), str(payload.request_id))).fetchone()
             document_request=json.dumps({'ids':[str(did) for did in payload.document_ids],'consent':bool(payload.document_ids and payload.documents_consent)},sort_keys=True)
             if existing:
+                old_workspace=db.execute('SELECT context_json FROM turn_workspace WHERE turn_id=?',(existing['id'],)).fetchone()
+                old_revision=json.loads(old_workspace['context_json']).get('context_revision') if old_workspace else None
+                if payload.context_revision != old_revision:
+                    raise HTTPException(409,'Identificador de envio já usado com outro contexto.')
                 old_context=db.execute('SELECT request_json FROM turn_document_context WHERE turn_id=?',(existing['id'],)).fetchone()
                 old_request=old_context['request_json'] if old_context else json.dumps({'ids':[],'consent':False},sort_keys=True)
                 if old_request != document_request:
@@ -171,14 +182,18 @@ async def send_message(cid: UUID, payload: SendMessage, request: Request):
                 if existing["user_text"] != payload.content or requested_model != payload.model:
                     raise HTTPException(409, "Identificador de envio já usado para outra mensagem.")
                 return turn_result(existing, requested_model, db)
+            workspace, workspace_instruction, workspace_audit = context_instruction(db,cid)
+            if payload.context_revision is not None and payload.context_revision != workspace['revision']:
+                raise HTTPException(409,'O contexto mudou. Reabra a conversa antes de enviar.')
+            workspace_audit['context_revision']=payload.context_revision
             document_body, documents_used, allowed_sources = selected_context(db,cid,payload.document_ids,payload.documents_consent)
-            personalization = preference_instruction(db) + (DOC_INSTRUCTION if documents_used else '')
-            turns = list(reversed(db.execute("SELECT * FROM turns WHERE conversation_id=? ORDER BY id DESC LIMIT 10", (str(cid),)).fetchall()))
+            personalization = preference_instruction(db) + workspace_instruction + (DOC_INSTRUCTION if documents_used else '')
+            turns = list(reversed(db.execute("SELECT * FROM turns WHERE conversation_id=? AND id>? ORDER BY id DESC LIMIT 10", (str(cid), workspace['through_id'] if workspace['use_memory'] and workspace['summary'] else 0)).fetchall()))
         # Keep full pairs and bound cost; old history remains in SQLite.
-        while turns and sum(len(t["user_text"]) + len(t["assistant_text"]) for t in turns) + len(payload.content) + len(document_body) > 40000:
+        while turns and sum(len(t["user_text"]) + len(t["assistant_text"]) for t in turns) + len(payload.content) + len(document_body) + len(personalization) > 40000:
             turns.pop(0)
-        if len(payload.content) + len(document_body) > 40000:
-            raise HTTPException(400,"O texto selecionado e a pergunta excedem o limite de contexto. Selecione menos documentos ou reduza a pergunta.")
+        if len(payload.content) + len(document_body) + len(personalization) > 40000:
+            raise HTTPException(400,"O contexto excede 40 mil caracteres. Reduza documentos, pergunta ou memórias ativas.")
         context = messages_from_turns(turns) + [{"role": "user", "content": payload.content + document_body}]
         models = [payload.model]
         approved = state.settings.free_fallback_models
@@ -216,6 +231,7 @@ async def send_message(cid: UUID, payload: SendMessage, request: Request):
             bump_revision(db)
             turn = db.execute("SELECT * FROM turns WHERE conversation_id=? AND request_id=?", (str(cid), str(payload.request_id))).fetchone()
             db.execute("INSERT INTO request_origins(turn_id, requested_model) VALUES (?, ?)", (turn["id"], payload.model))
+            db.execute('INSERT INTO turn_workspace VALUES(?,?)',(turn['id'],json.dumps(workspace_audit,ensure_ascii=False)))
             if documents_used:
                 db.execute('INSERT INTO turn_document_context VALUES(?,?,?,?,?)',(turn['id'],document_request,json.dumps(documents_used,ensure_ascii=False),json.dumps(sources,ensure_ascii=False),source_warning))
             return turn_result(turn, payload.model, db)

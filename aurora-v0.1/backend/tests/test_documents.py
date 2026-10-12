@@ -185,7 +185,7 @@ def restore(c,backup):
 def test_backup_restores_original_pages_links_references_and_request_identity(setup):
     c,_,p=setup;doc=upload(c).json();cid=attach(c,doc['id']);data=message([doc['id']])
     first=c.post(f'/api/conversations/{cid}/messages',json=data)
-    backup=c.get('/api/data/backup').json();assert backup['schema_version']==3 and len(backup['documents'])==1
+    backup=c.get('/api/data/backup').json();assert backup['schema_version']==4 and len(backup['documents'])==1
     c.delete(f"/api/documents/{doc['id']}?confirm=true")
     assert restore(c,backup).status_code==200
     assert c.get(f"/api/documents/{doc['id']}/pages/2").json()['text']=='Segunda pagina: arvores e vegetacao.'
@@ -196,7 +196,7 @@ def test_backup_restores_original_pages_links_references_and_request_identity(se
 def test_old_schema2_backup_is_accepted_and_clears_current_library(setup):
     c,_,_=setup;doc=upload(c).json();cid=attach(c,doc['id'])
     backup=c.get('/api/data/backup').json();backup['schema_version']=2
-    for key in ['documents','attachments','document_contexts']:del backup[key]
+    for key in ['documents','attachments','document_contexts','profiles','projects','memories','conversation_contexts','project_documents','turn_workspaces']:del backup[key]
     assert restore(c,backup).status_code==200
     assert c.get('/api/documents').json()['items']==[]
     assert c.get(f'/api/conversations/{cid}').status_code==200
@@ -235,12 +235,12 @@ def test_schema2_migration_preserves_old_turns_and_creates_one_safety_copy(tmp_p
         cid=str(uuid4());stamp='2026-10-12T00:00:00+00:00';rid=str(uuid4())
         db.execute('INSERT INTO conversations VALUES(?,?,?,?)',(cid,'Old',stamp,stamp))
         db.execute('INSERT INTO turns VALUES(1,?,?,?,?,?,?)',(cid,rid,'Hello','World','test-model',stamp))
-    initialize(path);copies=list((tmp_path/'backups').glob('before-upgrade-v0.4-*.sqlite3'));assert len(copies)==1
+    initialize(path);copies=list((tmp_path/'backups').glob('before-upgrade-v0.6-*.sqlite3'));assert len(copies)==1
     with connect(path) as db:
         assert db.execute('SELECT assistant_text FROM turns').fetchone()[0]=='World'
-        assert db.execute('PRAGMA user_version').fetchone()[0]==3
+        assert db.execute('PRAGMA user_version').fetchone()[0]==4
     old=sqlite3.connect(copies[0]);assert old.execute('PRAGMA user_version').fetchone()[0]==2;old.close()
-    initialize(path);assert len(list((tmp_path/'backups').glob('before-upgrade-v0.4-*.sqlite3')))==1
+    initialize(path);assert len(list((tmp_path/'backups').glob('before-upgrade-v0.6-*.sqlite3')))==1
 
 
 def test_library_storage_limit_is_checked_before_extraction(setup,monkeypatch):

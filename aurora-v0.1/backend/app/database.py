@@ -26,12 +26,12 @@ def initialize(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
     with connect(path) as db:
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version > 3:
+        if version > 4:
             raise RuntimeError("Banco de uma versão mais nova. Não faça downgrade sem restaurar um backup compatível.")
-        if version in (1, 2):
+        if version in (1, 2, 3):
             folder = path.parent / "backups"
             folder.mkdir(mode=0o700, exist_ok=True)
-            backup_path = folder / f"before-upgrade-v0.4-{uuid4()}.sqlite3"
+            backup_path = folder / f"before-upgrade-v0.6-{uuid4()}.sqlite3"
             descriptor = os.open(backup_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             os.close(descriptor)
             target = sqlite3.connect(backup_path)
@@ -79,5 +79,13 @@ def initialize(path: Path):
             turn_id INTEGER PRIMARY KEY REFERENCES turns(id) ON DELETE CASCADE,
             request_json TEXT NOT NULL, documents_json TEXT NOT NULL,
             sources_json TEXT NOT NULL, warning TEXT NOT NULL)""")
-        db.execute("PRAGMA user_version = 3")
+        db.execute("CREATE TABLE IF NOT EXISTS profiles (id TEXT PRIMARY KEY,name TEXT NOT NULL,description TEXT NOT NULL,instructions TEXT NOT NULL)")
+        db.execute("CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY,name TEXT NOT NULL,objective TEXT NOT NULL)")
+        db.execute("CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY,project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,text TEXT NOT NULL,enabled INTEGER NOT NULL)")
+        db.execute("CREATE TABLE IF NOT EXISTS conversation_context (conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,profile_id TEXT NOT NULL,project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,detail TEXT NOT NULL,use_memory INTEGER NOT NULL,revision INTEGER NOT NULL,summary TEXT NOT NULL,through_id INTEGER NOT NULL)")
+        db.execute("CREATE TABLE IF NOT EXISTS project_documents (project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,document_id TEXT REFERENCES documents(id) ON DELETE CASCADE,PRIMARY KEY(project_id,document_id))")
+        db.execute("CREATE TABLE IF NOT EXISTS turn_workspace (turn_id INTEGER PRIMARY KEY REFERENCES turns(id) ON DELETE CASCADE,context_json TEXT NOT NULL)")
+        db.execute("INSERT OR IGNORE INTO metadata VALUES ('workspace_id',?)",(str(uuid4()),))
+        db.execute("INSERT OR IGNORE INTO conversation_context SELECT id,'general',NULL,'equilibrado',1,0,'',0 FROM conversations")
+        db.execute("PRAGMA user_version = 4")
     path.chmod(0o600)
