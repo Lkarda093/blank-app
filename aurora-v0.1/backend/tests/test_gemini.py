@@ -4,6 +4,12 @@ import pytest
 from app.providers.gemini import GeminiProvider
 from app.providers.base import ProviderError
 
+@pytest.fixture(autouse=True)
+def skip_retry_wait(monkeypatch):
+    async def no_wait(seconds):
+        pass
+    monkeypatch.setattr('app.providers.gemini.sleep', no_wait)
+
 async def call(handler, key='secret-test-key'):
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         return await GeminiProvider(client, key).generate('test-model', [{'role':'user','content':'Oi'}, {'role':'assistant','content':'Olá'}, {'role':'user','content':'Tudo bem?'}])
@@ -63,3 +69,66 @@ def test_saved_preferences_are_sent_as_system_personalization():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             return await GeminiProvider(client,'fake-key').generate('test-model',[{'role':'user','content':'Oi'}],personalization='Preferências autorizadas: Willhas, conciso')
     assert asyncio.run(run())=='Olá!'
+
+
+def test_temporary_errors_recover_with_bounded_backoff(monkeypatch):
+    waits, bodies = [], []
+    async def capture_wait(seconds):
+        waits.append(seconds)
+    monkeypatch.setattr('app.providers.gemini.sleep', capture_wait)
+    def handler(request):
+        bodies.append(request.content)
+        if len(bodies) < 3:
+            return httpx.Response(500 if len(bodies) == 1 else 503, text='private upstream body')
+        return httpx.Response(200, json={'candidates':[{'content':{'parts':[{'text':'Recuperou.'}]}}]})
+    assert asyncio.run(call(handler)) == 'Recuperou.'
+    assert waits == [0.75, 1.5]
+    assert len(bodies) == 3 and len(set(bodies)) == 1
+
+
+def test_persistent_unavailability_stops_after_three_attempts():
+    calls = []
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(503, text='private upstream body')
+    with pytest.raises(ProviderError) as exc:
+        asyncio.run(call(handler))
+    assert len(calls) == 3
+    assert 'HTTP 503' in exc.value.message and '3 tentativas' in exc.value.message
+    assert 'private' not in exc.value.message
+
+
+@pytest.mark.parametrize('kind', ['success', 'quota', 'model', 'timeout', 'network'])
+def test_no_retry_for_success_or_non_transient_failures(kind):
+    calls = []
+    def handler(request):
+        calls.append(request)
+        if kind == 'timeout':
+            raise httpx.ReadTimeout('private error', request=request)
+        if kind == 'network':
+            raise httpx.ConnectError('private error', request=request)
+        if kind == 'success':
+            return httpx.Response(200, json={'candidates':[{'content':{'parts':[{'text':'OK'}]}}]})
+        return httpx.Response(429 if kind == 'quota' else 404)
+    if kind == 'success':
+        assert asyncio.run(call(handler)) == 'OK'
+    else:
+        with pytest.raises(ProviderError):
+            asyncio.run(call(handler))
+    assert len(calls) == 1
+
+
+def test_total_timeout_does_not_expose_upstream_details(monkeypatch):
+    calls = []
+    def short_deadline(seconds):
+        assert seconds == 65
+        return asyncio.timeout(0.01)
+    monkeypatch.setattr('app.providers.gemini.timeout', short_deadline)
+    async def handler(request):
+        calls.append(request)
+        await asyncio.sleep(0.1)
+        return httpx.Response(200, json={'candidates':[{'content':{'parts':[{'text':'Tarde demais'}]}}]})
+    with pytest.raises(ProviderError) as exc:
+        asyncio.run(call(handler))
+    assert exc.value.status == 504 and 'private' not in exc.value.message
+    assert len(calls) == 1

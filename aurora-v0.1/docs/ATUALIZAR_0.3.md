@@ -62,3 +62,11 @@ A biblioteca, plugins, reconhecimento de documentos, voz, geração de mídia e 
 5. Em tela pequena, abra e feche o menu/histórico pelo botão do cabeçalho.
 
 A suíte automatizada e o navegador usam IA simulada, explicitamente identificada. A resposta real no seu Codespace depende da chave, modelo e cota existentes. Esta versão não acrescenta anexos, voz, plugins, outros provedores ou mascote animada. Documentos estão planejados para a 0.4, sujeita a autorização.
+
+## Correção de falhas intermitentes do Gemini
+
+O adaptador repete somente respostas HTTP 500 e 503, com até três tentativas e esperas de 0,75 e 1,5 segundo. Há um limite total de 65 segundos, inferior ao timeout do navegador. Respostas bem-sucedidas, cota (429), modelo não encontrado, timeouts e falhas de conexão não são repetidos automaticamente.
+
+Se persistir a falha, o aviso mostra o código HTTP e o número de tentativas. Isso não garante disponibilidade do Google. Nenhuma troca de modelo ou chave é realizada. As tentativas adicionais são chamadas reais ao provedor, sujeitas às condições da conta. Uma resposta bem-sucedida continua gerando um único par de mensagens no histórico.
+
+Para aplicar esta correção de backend, pare com Ctrl + C, execute `git pull --ff-only origin aurora-v0.1` na pasta do projeto e inicie novamente com `bash scripts/start.sh`. Não é necessário reinstalar as dependências da interface para esta alteração.

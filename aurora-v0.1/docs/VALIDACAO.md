@@ -4,7 +4,7 @@ Execução concluída em 12/10/2026. Linux, Python 3.12.14 e Node 24.19.0. Vers�
 
 | Verificação | Resultado |
 | --- | --- |
-| Testes Python completos | 57 passaram |
+| Testes Python completos | 65 passaram após a correção Gemini |
 | Cliente JavaScript | 6 passaram |
 | Compilação Python e sintaxe Bash | Passaram |
 | Build React/Vite/Tailwind | Concluído |
@@ -86,3 +86,7 @@ Nesta execução foi usado um Chromium alternativo de QA já disponível no ambi
 ## Limites da verificação
 
 Não foi realizado benchmark de RAM/carga, teste em Android físico, Safari, Firefox ou Windows nativo. Build: aproximadamente 253 kB JS principal (80 kB gzip), 24 kB JS adicional de módulos sob demanda (7,4 kB gzip) e 36 kB CSS (8 kB gzip), sem modelos locais ou fontes externas. A suíte não faz chamadas pagas ao Google. Confirmar a interface Cosmic UI 0.3.1 com Gemini real depende de atualizar o Codespace do proprietário. O adaptador Gemini não foi alterado nesta versão. Não foi realizada auditoria completa de acessibilidade ou teste com leitor de tela.
+
+## Falhas intermitentes Gemini
+
+Oito casos adicionais testaram recuperação após 500/503 com corpo de mensagem preservado, espera exponencial limitada, encerramento após três falhas, código HTTP sem conteúdo privado, ausência de repetição após sucesso/cota/modelo/timeouts/conexão e cancelamento real por deadline. Total: 65 testes Python passaram. O transporte HTTP foi simulado; não foi usada a chave do proprietário nem se comprovou a causa específica do erro relatado. As verificações anteriores de frontend permanecem aplicáveis porque esta correção não altera a interface.
