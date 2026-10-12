@@ -1,4 +1,4 @@
-# Validação — Aurora 0.2
+# Validação — Aurora 0.3
 
 Execução concluída em 12/10/2026. Linux, Python 3.12.14 e Node 24.19.0. Versões instaladas fixadas nos requisitos e package-lock.
 
@@ -14,7 +14,17 @@ Execução concluída em 12/10/2026. Linux, Python 3.12.14 e Node 24.19.0. Vers�
 | Sessão após reinício da API | Testada com SQLite persistente |
 | Chamada real Gemini da 0.1 | Confirmada pelo proprietário nesta conversa, usando gemini-3.8-flash |
 | Personalização real Gemini da 0.2 com a conta do proprietário | Pendente após atualizar o Codespace; não temos acesso à chave |
-| Instalação da 0.2 no Codespace do proprietário | Pendente após baixar a atualização |
+| Instalação da 0.2 no Codespace do proprietário | Confirmada pelo proprietário: busca, renomeação, exports, download de backup, preferências após reload e prévia de restauração |
+| Instalação da 0.3 no Codespace do proprietário | Pendente após atualizar |
+| Layout em 320, 390, 768, 1024 e 1440 pixels | Sem rolagem horizontal; campo de mensagem visível |
+| Histórico móvel por teclado | Foco contido, Escape fecha e retorna ao botão de abertura |
+| Temas claro/escuro | Inspecionados visualmente; preferência preservada após reload |
+
+## Interface 0.3
+
+Objetivo: melhorar identidade visual, clareza das ações e uso em desktop/celular sem perder funções da 0.2. Critérios: navegação nomeada, exportações explícitas, temas persistentes, nenhuma rolagem horizontal nos tamanhos testados e fluxo de dados anterior concluído. Todos atendidos no Chromium de QA.
+
+As dependências de produção e o schema SQLite 2 foram mantidos. O número público da aplicação passou a 0.3.0; o formato de backup não mudou. O teste de sugestões também confirmou que o texto é colocado no campo e o foco é transferido, sem envio automático.
 
 ## Cobertura
 
@@ -71,4 +81,4 @@ Nesta execução foi usado um Chromium alternativo de QA já disponível no ambi
 
 ## Limites da verificação
 
-Não foi realizado benchmark de RAM/carga, teste em Android físico, Safari, Firefox ou Windows nativo. Build: aproximadamente 251 kB JS (78 kB gzip) e 18 kB CSS (4,9 kB gzip), sem modelos locais ou fontes externas. A suíte não faz chamadas pagas ao Google. Confirmar a atualização e o uso das preferências com Gemini real depende de executar a 0.2 com a configuração já existente no Codespace do proprietário.
+Não foi realizado benchmark de RAM/carga, teste em Android físico, Safari, Firefox ou Windows nativo. Build: aproximadamente 253 kB JS (78 kB gzip) e 22 kB CSS (5,6 kB gzip), sem modelos locais ou fontes externas. A suíte não faz chamadas pagas ao Google. Confirmar a interface 0.3 com Gemini real depende de atualizar o Codespace do proprietário. O adaptador Gemini não foi alterado nesta versão. Não foi realizada auditoria completa de acessibilidade ou teste com leitor de tela.

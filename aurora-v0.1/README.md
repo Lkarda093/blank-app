@@ -1,12 +1,14 @@
-# Aurora 0.2 — assistente pessoal
+# Aurora 0.3 — assistente pessoal
 
 Uma base pequena para sua assistente: React + Vite + Tailwind CSS, FastAPI, Gemini e histórico SQLite. Interface em português, clara/escura, responsiva, com histórico à direita. Esta é uma nova implementação; não modifica nem migra automaticamente projetos Streamlit ou o pacote Aurora anterior.
 
-**Já usa a 0.1? Comece por [Atualizar para 0.2](docs/ATUALIZAR_0.2.md).** Para uma instalação nova, siga a seção 2. A pasta e branch continuam chamadas `aurora-v0.1` para facilitar a atualização. Nenhuma versão seguinte será implementada sem sua autorização.
+**Já usa a 0.2? Comece por [Atualizar para 0.3](docs/ATUALIZAR_0.3.md).** Se ainda usa a 0.1, veja também [a migração para 0.2](docs/ATUALIZAR_0.2.md). Para uma instalação nova, siga a seção 2. A pasta e branch continuam chamadas `aurora-v0.1` para facilitar a atualização. Nenhuma versão seguinte será implementada sem sua autorização.
 
 ## 1. O que está implementado
 
-Novidades da 0.2: busca e renomeação de conversas; exportação em TXT/JSON; backup completo JSON; restauração com prévia, confirmação e cópia de recuperação; preferências editáveis e consentidas; sessão no navegador com opção de 7 dias. Migração automática do SQLite preserva o histórico da 0.1 e gera uma cópia anterior à atualização.
+Novidades da 0.3: identidade violeta/azul, navegação com nomes visíveis, barra inferior móvel, histórico com foco de teclado e exportações identificadas. Não altera o esquema do banco nem adiciona dependências.
+
+Recursos mantidos da 0.2: busca e renomeação de conversas; exportação em TXT/JSON; backup completo JSON; restauração com prévia, confirmação e cópia de recuperação; preferências editáveis e consentidas; sessão no navegador com opção de 7 dias. Migração automática do SQLite preserva o histórico da 0.1 e gera uma cópia anterior à atualização.
 
 - Frontend React funcional, envio de texto e exibição das respostas.
 - Adaptador real para a API REST Gemini `generateContent` por HTTPS; sem respostas fictícias no aplicativo normal.
@@ -18,7 +20,7 @@ Novidades da 0.2: busca e renomeação de conversas; exportação em TXT/JSON; b
 - Erros para configuração ausente, cota, permissão, modelo indisponível, conexão, timeout e resposta bloqueada.
 - Contexto limitado, paginação do histórico e proteção contra duplicação de envios concluídos.
 
-**Não implementado:** voz, anexos, imagens/vídeos, pesquisa web, biblioteca, Obsidian, plugins, usuários adicionais, agente local e outros provedores. Referências a biblioteca/plugins na interface são identificadas como planejamento. As respostas são texto simples; Markdown e código aparecem como texto, sem execução ou HTML.
+**Não implementado:** voz, anexos, imagens/vídeos, pesquisa web, biblioteca, Obsidian, plugins, usuários adicionais, agente local e outros provedores. Expansões ficam descritas no painel administrativo como planejamento. As respostas são texto simples; Markdown e código aparecem como texto, sem execução ou HTML.
 
 ## 2. Primeiro uso no GitHub Codespaces
 
