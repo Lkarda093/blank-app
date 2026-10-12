@@ -1,12 +1,12 @@
 # Aurora 0.3 — assistente pessoal
 
-Uma base pequena para sua assistente: React + Vite + Tailwind CSS, FastAPI, Gemini e histórico SQLite. Interface em português, clara/escura, responsiva, com histórico à direita. Esta é uma nova implementação; não modifica nem migra automaticamente projetos Streamlit ou o pacote Aurora anterior.
+Uma base pequena para sua assistente: React + Vite + Tailwind CSS, FastAPI, Gemini e histórico SQLite. Interface em português, clara/escura, responsiva, com histórico à esquerda ou à direita. Esta é uma nova implementação; não modifica nem migra automaticamente projetos Streamlit ou o pacote Aurora anterior.
 
 **Já usa a 0.2? Comece por [Atualizar para 0.3](docs/ATUALIZAR_0.3.md).** Se ainda usa a 0.1, veja também [a migração para 0.2](docs/ATUALIZAR_0.2.md). Para uma instalação nova, siga a seção 2. A pasta e branch continuam chamadas `aurora-v0.1` para facilitar a atualização. Nenhuma versão seguinte será implementada sem sua autorização.
 
 ## 1. O que está implementado
 
-Novidades da 0.3: identidade violeta/azul, navegação com nomes visíveis, barra inferior móvel, histórico com foco de teclado e exportações identificadas. Não altera o esquema do banco nem adiciona dependências.
+Novidades da correção 0.3.1: Aurora Cosmic UI baseada nas referências; saudação, data/hora local, seis cartões, provedores e compositor compacto; navegação/histórico à esquerda, menu móvel recolhível e opção de painel direito. Configurações unifica preferências, aparência e dados, incluindo backup. Tema automático, cor de destaque, efeitos e modelo preferido ficam salvos neste navegador. Módulos futuros têm páginas explícitas de desenvolvimento, sem arquivos ou conexões fictícias. Não altera o esquema do banco nem adiciona dependências.
 
 Recursos mantidos da 0.2: busca e renomeação de conversas; exportação em TXT/JSON; backup completo JSON; restauração com prévia, confirmação e cópia de recuperação; preferências editáveis e consentidas; sessão no navegador com opção de 7 dias. Migração automática do SQLite preserva o histórico da 0.1 e gera uma cópia anterior à atualização.
 
@@ -16,11 +16,11 @@ Recursos mantidos da 0.2: busca e renomeação de conversas; exportação em TXT
 - Autenticação do proprietário por token na entrada e sessão HttpOnly no navegador. Bearer continua disponível para clientes da API.
 - Seleção entre os modelos explicitamente autorizados em `GEMINI_MODELS`.
 - Tema persistido no navegador. A chave da API nunca é enviada ao navegador.
-- Configurações com preferências e status real de conexão; painel administrativo com estatísticas, backup e restauração.
+- Configurações com preferências, aparência, modelos e dados; estatísticas, backup e restauração na aba Dados. O estado configurado do Gemini é validado pelo envio.
 - Erros para configuração ausente, cota, permissão, modelo indisponível, conexão, timeout e resposta bloqueada.
 - Contexto limitado, paginação do histórico e proteção contra duplicação de envios concluídos.
 
-**Não implementado:** voz, anexos, imagens/vídeos, pesquisa web, biblioteca, Obsidian, plugins, usuários adicionais, agente local e outros provedores. Expansões ficam descritas no painel administrativo como planejamento. As respostas são texto simples; Markdown e código aparecem como texto, sem execução ou HTML.
+**Não implementado:** voz, anexos, imagens/vídeos, pesquisa web, biblioteca, Obsidian, plugins, usuários adicionais, agente local e outros provedores. As páginas de expansão indicam desenvolvimento; os controles de upload/execução ainda não estão disponíveis. As respostas são texto simples; Markdown e código aparecem como texto, sem execução ou HTML.
 
 ## 2. Primeiro uso no GitHub Codespaces
 

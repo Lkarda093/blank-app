@@ -1,4 +1,4 @@
-# Validação — Aurora 0.3
+# Validação — Aurora 0.3.1
 
 Execução concluída em 12/10/2026. Linux, Python 3.12.14 e Node 24.19.0. Versões instaladas fixadas nos requisitos e package-lock.
 
@@ -20,11 +20,15 @@ Execução concluída em 12/10/2026. Linux, Python 3.12.14 e Node 24.19.0. Vers�
 | Histórico móvel por teclado | Foco contido, Escape fecha e retorna ao botão de abertura |
 | Temas claro/escuro | Inspecionados visualmente; preferência preservada após reload |
 
-## Interface 0.3
+## Correção Aurora Cosmic UI 0.3.1
 
-Objetivo: melhorar identidade visual, clareza das ações e uso em desktop/celular sem perder funções da 0.2. Critérios: navegação nomeada, exportações explícitas, temas persistentes, nenhuma rolagem horizontal nos tamanhos testados e fluxo de dados anterior concluído. Todos atendidos no Chromium de QA.
+Objetivo: seguir a composição de `01_inicio_pc(1).png`, `07_tema_claro_responsivo(1).png`, demais telas conceituais e o texto fornecido pelo proprietário. Critérios: lateral esquerda única por padrão, saudação à esquerda, seis cartões, provedores, compositor compacto, cinco ações rápidas, paisagem, módulos independentes com estado honesto e Configurações centralizadas. Implementados e inspecionados no Chromium.
 
-As dependências de produção e o schema SQLite 2 foram mantidos. O número público da aplicação passou a 0.3.0; o formato de backup não mudou. O teste de sugestões também confirmou que o texto é colocado no campo e o foco é transferido, sem envio automático.
+A paisagem é uma recriação vetorial decorativa, não o mesmo arquivo raster da referência. Gemini continua sendo o único provedor real. Biblioteca não contém pastas/arquivos fictícios; ferramentas e computador não executam ações.
+
+A verificação no navegador adicional cobriu: saudação atualizada pelo nome consentido; tema automático seguindo mudanças do sistema e reload; troca de cores e efeitos; histórico à esquerda/direita sem duplicar pesquisa, recolhimento e expansão; fixação local; grade de agentes com seleção Gemini; busca nas ferramentas; controles indisponíveis da biblioteca; aviso do computador; ações rápidas preenchendo texto sem enviar; avisos dos recursos em desenvolvimento; menu móvel com foco contido, Escape e retorno ao botão. Os fluxos de backup e preferências anteriores foram executados na nova organização em abas.
+
+As dependências de produção e o schema SQLite 2 foram mantidos. O número público da aplicação passou a 0.3.1; o formato do backup não mudou. As escolhas visuais, posição do histórico, fixações e modelo preferido são preferências deste navegador; não fazem parte do backup do servidor. Preferências pessoais autorizadas continuam em SQLite.
 
 ## Cobertura
 
@@ -81,4 +85,4 @@ Nesta execução foi usado um Chromium alternativo de QA já disponível no ambi
 
 ## Limites da verificação
 
-Não foi realizado benchmark de RAM/carga, teste em Android físico, Safari, Firefox ou Windows nativo. Build: aproximadamente 253 kB JS (78 kB gzip) e 22 kB CSS (5,6 kB gzip), sem modelos locais ou fontes externas. A suíte não faz chamadas pagas ao Google. Confirmar a interface 0.3 com Gemini real depende de atualizar o Codespace do proprietário. O adaptador Gemini não foi alterado nesta versão. Não foi realizada auditoria completa de acessibilidade ou teste com leitor de tela.
+Não foi realizado benchmark de RAM/carga, teste em Android físico, Safari, Firefox ou Windows nativo. Build: aproximadamente 253 kB JS principal (80 kB gzip), 24 kB JS adicional de módulos sob demanda (7,4 kB gzip) e 36 kB CSS (8 kB gzip), sem modelos locais ou fontes externas. A suíte não faz chamadas pagas ao Google. Confirmar a interface Cosmic UI 0.3.1 com Gemini real depende de atualizar o Codespace do proprietário. O adaptador Gemini não foi alterado nesta versão. Não foi realizada auditoria completa de acessibilidade ou teste com leitor de tela.

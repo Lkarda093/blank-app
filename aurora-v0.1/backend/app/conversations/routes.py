@@ -43,7 +43,7 @@ class SendMessage(BaseModel):
 @router.get("/config")
 def config(request: Request):
     s = request.app.state.settings
-    return {"version": "0.3.0", "provider": "Gemini", "models": s.models,
+    return {"version": "0.3.1", "provider": "Gemini", "models": s.models,
             "configured": bool(s.api_key and s.models), "max_message_chars": 8000,
             "context_turns": 10, "context_chars": 40000,
             "cost_notice": "A API pode ter cotas e custos. O aplicativo não consulta saldo nem garante uso gratuito. Confira seu projeto no Google AI Studio."}

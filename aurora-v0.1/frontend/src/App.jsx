@@ -1,80 +1,47 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { api, download } from './api.js';
-import Preferences from './Preferences.jsx';
-import DataPanel from './DataPanel.jsx';
-
-function Icon({ name, size = 20 }) {
-  const paths = {
-    chat: 'M4 4h16v12H9l-5 4V4Z', plus: 'M12 5v14M5 12h14',
-    send: 'm5 12 7-7 7 7M12 5v15', sun: 'M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1 1M18 18l1 1M5 19l1-1M18 6l1-1M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0',
-    settings: 'M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6',
-    shield: 'm12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Zm-4 9 3 3 5-6',
-    menu: 'M4 6h16M4 12h16M4 18h16', trash: 'M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7',
-    exit: 'M9 4H4v16h5M9 12h12m-5-5 5 5-5 5', close: 'm6 6 12 12M6 18 18 6',
-  };
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name] || paths.chat} /></svg>;
-}
-function Mark({ small = false }) { return <span className={`mark ${small ? 'small' : ''}`} aria-hidden="true"><i /></span>; }
-
-export default function App() {
-  const [theme, setTheme] = useState(() => { try { return localStorage.getItem('aurora-theme') || 'dark'; } catch { return 'dark'; } });
-  const token = null; // Requests use the HttpOnly session cookie.
-  const [authenticated, setAuthenticated] = useState(false);
-  const [checkingSession, setCheckingSession] = useState(true);
-  const [remember, setRemember] = useState(false);
-  const [query, setQuery] = useState('');
-  const [searchInput, setSearchInput] = useState('');
-  const [renameValue, setRenameValue] = useState('');
-  const [renaming, setRenaming] = useState(false);
-  const [loginToken, setLoginToken] = useState('');
-  const [config, setConfig] = useState(null);
-  const [conversations, setConversations] = useState([]);
-  const [hasMore, setHasMore] = useState(false);
-  const [active, setActive] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [nextBefore, setNextBefore] = useState(null);
-  const [draft, setDraft] = useState('');
-  const [model, setModel] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState('');
-  const [view, setView] = useState('chat');
-  const [sidebar, setSidebar] = useState(false);
-  const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 900px)').matches);
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const retry = useRef(null);
-  const end = useRef(null);
-  const input = useRef(null);
-  const gate = useRef(false);
-  const historyPanel = useRef(null);
-  const historyToggle = useRef(null);
-  useEffect(() => {
-    const media = window.matchMedia('(max-width: 900px)');
-    const update = () => { setCompact(media.matches); setSidebar(false); };
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  }, []);
-  useEffect(() => {
-    if (!sidebar || !compact) return;
-    const panel = historyPanel.current;
-    panel?.querySelector('button')?.focus();
-    const handleKey = event => {
-      if (event.key === 'Escape') { setSidebar(false); return; }
-      if (event.key !== 'Tab') return;
-      const elements = [...panel.querySelectorAll('button:not(:disabled), input:not(:disabled), a[href]')].filter(el => el.getClientRects().length);
-      const first = elements[0], last = elements[elements.length - 1];
-      if (!first) { event.preventDefault(); return; }
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-    };
-    document.addEventListener('keydown', handleKey);
-    return () => { document.removeEventListener('keydown', handleKey); historyToggle.current?.focus(); };
-  }, [sidebar, compact]);
-  useEffect(() => { if (renaming) document.getElementById('conversation-title')?.focus(); }, [renaming]);
-  useEffect(() => { document.documentElement.dataset.theme = theme; try { localStorage.setItem('aurora-theme', theme); } catch {} }, [theme]);
-  useEffect(() => { end.current?.scrollIntoView({ behavior: 'auto' }); }, [active, sending]);
-  useEffect(() => { if (deleteTarget) document.getElementById('cancel-delete')?.focus(); }, [deleteTarget]);
-
+import {Icon,Mark} from './UI.jsx';
+import Home,{QuickActions} from './Home.jsx';
+import History from './History.jsx';
+const SettingsPanel=lazy(()=>import('./SettingsPanel.jsx'));
+const Agents=lazy(()=>import('./Modules.jsx').then(m=>({default:m.Agents})));
+const Library=lazy(()=>import('./Modules.jsx').then(m=>({default:m.Library})));
+const Tools=lazy(()=>import('./Modules.jsx').then(m=>({default:m.Tools})));
+const Computer=lazy(()=>import('./Modules.jsx').then(m=>({default:m.Computer})));
+const Organization=lazy(()=>import('./Modules.jsx').then(m=>({default:m.Organization})));
+function stored(key,fallback){try{const value=localStorage.getItem(key);return value===null?fallback:JSON.parse(value);}catch{return fallback;}}
+function usePreference(key,fallback){const [value,setValue]=useState(()=>stored(key,fallback));useEffect(()=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{}},[key,value]);return [value,setValue];}
+function chooseModel(cfg){const preferred=stored('aurora-model','');return cfg.models.includes(preferred)?preferred:cfg.models[0]||'';}
+const navItems=[['chat','Chats','chat'],['agents','Agentes e IAs','spark'],['plugins','Plugins','plugin'],['library','Biblioteca','folder'],['tools','Ferramentas','tools'],['computer','Computador','computer'],['organization','Organização','organize'],['settings','Configurações','settings']];
+export default function App(){
+ const [theme,setTheme]=useState(()=>{try{const v=localStorage.getItem('aurora-theme');return ['auto','light','dark'].includes(v)?v:'dark';}catch{return 'dark';}});
+ const [accent,setAccent]=usePreference('aurora-accent','violet');
+ const [effects,setEffects]=usePreference('aurora-effects',true);
+ const [historySide,setHistorySide]=usePreference('aurora-history-side','left');
+ const [pinned,setPinned]=usePreference('aurora-pinned',[]);
+ const [systemDark,setSystemDark]=useState(()=>window.matchMedia('(prefers-color-scheme: dark)').matches);
+ const resolvedTheme=theme==='auto'?(systemDark?'dark':'light'):theme;
+ const token=null;
+ const [authenticated,setAuthenticated]=useState(false),[checkingSession,setCheckingSession]=useState(true),[remember,setRemember]=useState(false);
+ const [query,setQuery]=useState(''),[searchInput,setSearchInput]=useState(''),[renameValue,setRenameValue]=useState(''),[renaming,setRenaming]=useState(false),[loginToken,setLoginToken]=useState('');
+ const [config,setConfig]=useState(null),[conversations,setConversations]=useState([]),[hasMore,setHasMore]=useState(false),[active,setActive]=useState(null),[messages,setMessages]=useState([]),[nextBefore,setNextBefore]=useState(null);
+ const [draft,setDraft]=useState(''),[model,setModel]=useState(''),[busy,setBusy]=useState(false),[sending,setSending]=useState(false),[error,setError]=useState(''),[view,setView]=useState('chat');
+ const [sidebar,setSidebar]=useState(false),[compact,setCompact]=useState(()=>window.matchMedia('(max-width: 900px)').matches),[navCollapsed,setNavCollapsed]=useState(false),[rightOpen,setRightOpen]=useState(true);
+ const [deleteTarget,setDeleteTarget]=useState(null),[profile,setProfile]=useState({name:''}),[settingsTab,setSettingsTab]=useState('Geral'),[libraryFilter,setLibraryFilter]=useState('Todos'),[libraryMenu,setLibraryMenu]=useState(false),[agentSearch,setAgentSearch]=useState(''),[planned,setPlanned]=useState('');
+ const retry=useRef(null),end=useRef(null),input=useRef(null),gate=useRef(false),historyPanel=useRef(null),historyToggle=useRef(null);
+ useEffect(()=>{const media=window.matchMedia('(max-width: 900px)');const update=()=>{setCompact(media.matches);setSidebar(false);};media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[]);
+ useEffect(()=>{const media=window.matchMedia('(prefers-color-scheme: dark)');const update=()=>setSystemDark(media.matches);media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[]);
+ useEffect(()=>{document.documentElement.dataset.theme=resolvedTheme;document.documentElement.dataset.accent=accent;document.documentElement.dataset.effects=effects?'on':'off';try{localStorage.setItem('aurora-theme',theme);}catch{}},[theme,resolvedTheme,accent,effects]);
+ useEffect(()=>{if(!sidebar||!compact||deleteTarget)return;const panel=historyPanel.current;panel?.querySelector('button:not(:disabled)')?.focus();const handleKey=event=>{if(event.key==='Escape'){setSidebar(false);return;}if(event.key!=='Tab')return;const elements=[...panel.querySelectorAll('button:not(:disabled), input:not(:disabled), a[href]')].filter(el=>el.getClientRects().length);const first=elements[0],last=elements[elements.length-1];if(!first){event.preventDefault();return;}if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}};document.addEventListener('keydown',handleKey);return()=>{document.removeEventListener('keydown',handleKey);historyToggle.current?.focus();};},[sidebar,compact,deleteTarget]);
+ useEffect(()=>{if(renaming)document.getElementById('conversation-title')?.focus();},[renaming]);
+ useEffect(()=>{if(messages.length||sending)end.current?.scrollIntoView({behavior:'auto'});},[active,sending]);
+ useEffect(()=>{if(deleteTarget)document.getElementById('cancel-delete')?.focus();},[deleteTarget]);
+ useEffect(()=>{if(!authenticated)return;let alive=true;api('/preferences').then(data=>{if(alive)setProfile(data.saved||{name:''});}).catch(()=>{});return()=>{alive=false;};},[authenticated]);
+ useEffect(()=>{if(model)try{localStorage.setItem('aurora-model',JSON.stringify(model));}catch{}},[model]);
+ useEffect(()=>{if(input.current){input.current.style.height='auto';input.current.style.height=Math.min(140,Math.max(45,input.current.scrollHeight))+'px';}},[draft,view]);
+ function navigate(next){setView(next);setSidebar(false);setPlanned('');}
+ function prompt(text){setView('chat');setPlanned('');if(text!==null)setDraft(text);setTimeout(()=>input.current?.focus(),0);}
+ function openAgents(search=''){setAgentSearch(search);navigate('agents');}
   async function perform(work) {
     if (gate.current) return;
     gate.current = true; setBusy(true); setError('');
@@ -92,7 +59,7 @@ export default function App() {
       await api('/auth/login', null, { method: 'POST', body: JSON.stringify({token:auth, remember}) });
       setLoginToken('');
       const [cfg, list] = await Promise.all([api('/config'), api('/conversations')]);
-      setConfig(cfg); setModel(cfg.models[0] || ''); setConversations(list); setHasMore(list.length === 100);
+      setConfig(cfg); setModel(chooseModel(cfg)); setConversations(list); setHasMore(list.length === 100);
       setAuthenticated(true); setQuery(''); setSearchInput('');
     });
   }
@@ -137,7 +104,7 @@ export default function App() {
   }
   function clearAccount() {
     setAuthenticated(false); setConfig(null); setConversations([]); setMessages([]); setActive(null);
-    setDraft(''); setError(''); setView('chat'); setDeleteTarget(null); retry.current = null;
+    setDraft(''); setError(''); setView('chat'); setSidebar(false); setDeleteTarget(null); setProfile({name:''}); retry.current = null;
   }
   async function logout() { await perform(async () => { await api('/auth/logout',null,{method:'POST'}); clearAccount(); }); }
   useEffect(() => {
@@ -146,76 +113,43 @@ export default function App() {
       try {
         await api('/auth/session');
         const [cfg, list] = await Promise.all([api('/config'), api('/conversations')]);
-        if(alive) { setConfig(cfg); setModel(cfg.models[0] || ''); setConversations(list); setHasMore(list.length===100); setAuthenticated(true); }
+        if(alive) { setConfig(cfg); setModel(chooseModel(cfg)); setConversations(list); setHasMore(list.length===100); setAuthenticated(true); }
       } catch(e) { if(alive && e.status!==401) setError(e.message); }
       finally { if(alive) setCheckingSession(false); }
     })();
     return () => { alive=false; };
   }, []);
-  const pageTitle = view === 'chat' ? 'Seu espaço de ideias' : view === 'settings' ? 'Configurações' : 'Painel do proprietário';
-  return <div className="app-shell">
-    {checkingSession ? <main className="login-screen"><p role="status">Verificando acesso…</p></main> : !authenticated ? <main className="login-screen"><form onSubmit={login} className="login-card">
-      <Mark /><p className="eyebrow">ASSISTENTE PESSOAL · V0.3</p><h1>Bem-vindo à Aurora.</h1>
-      <p className="muted">Um espaço tranquilo para pensar, conversar e construir.</p>
-      <label htmlFor="owner-token">Token do proprietário</label>
-      <input id="owner-token" type="password" autoComplete="current-password" required value={loginToken} onChange={e => setLoginToken(e.target.value)} placeholder="Cole seu token de acesso" />
-      <p className="hint">Use AURORA_OWNER_TOKEN de backend/.env. A chave Gemini fica somente no servidor.</p>
-      <label className="check-label"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />Manter acesso por 7 dias neste dispositivo</label>
-      {error && <div role="alert" className="error">{error}</div>}
-      <button className="primary" disabled={busy}>{busy ? 'Conectando…' : 'Entrar no meu espaço'} <span aria-hidden="true">↗</span></button>
-      <p className="hint">A sessão permite recarregar sem digitar o token novamente. Use Sair para encerrar o acesso neste navegador.</p>
-    </form></main> : <>
-      <nav className="rail" aria-label="Navegação principal" inert={sidebar && compact}><div className="rail-brand"><Mark small /><span>Aurora<small>Sua assistente pessoal</small></span></div><span className="nav-heading">SEU ESPAÇO</span>
-        <button className={view === 'chat' ? 'selected' : ''} aria-current={view === 'chat' ? 'page' : undefined} aria-label="Conversar" title="Conversar" onClick={() => setView('chat')} disabled={busy}><Icon name="chat" /><span>Conversar</span></button>
-        <button className={view === 'settings' ? 'selected' : ''} aria-current={view === 'settings' ? 'page' : undefined} aria-label="Configurações" title="Configurações" onClick={() => setView('settings')} disabled={busy}><Icon name="settings" /><span>Configurações</span></button>
-        <button className={view === 'admin' ? 'selected' : ''} aria-current={view === 'admin' ? 'page' : undefined} aria-label="Administração" title="Administração" onClick={() => setView('admin')} disabled={busy}><Icon name="shield" /><span>Administração</span></button>
-        <div className="rail-spacer" /><button aria-label="Alternar tema" title="Alternar tema" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}><Icon name="sun" /><span>{theme === 'dark' ? 'Tema claro' : 'Tema escuro'}</span></button>
-        <button aria-label="Sair" title="Sair" onClick={logout} disabled={busy}><Icon name="exit" /><span>Sair</span></button><div className="profile"><span className="avatar">EU</span><span>Meu espaço<small>Acesso pessoal</small></span></div>
-      </nav>
-      <main className="workspace" inert={sidebar && compact}>
-        <header className="topbar"><div><span className="brand">aurora<span className="brand-dot">.</span></span><span className="top-caption">{pageTitle}</span></div>
-          <div className="flex items-center gap-3"><span className="version">v0.3</span><button ref={historyToggle} className="mobile-menu" aria-expanded={sidebar} aria-controls="history-panel" aria-label="Abrir histórico" onClick={() => setSidebar(!sidebar)}><Icon name="menu" /></button></div>
-        </header>
-        {error && <div role="alert" className="error global-error">{error}<button aria-label="Fechar erro" onClick={() => setError('')}><Icon name="close" size={16} /></button></div>}
-        {view === 'chat' ? <>
-          {active && <div className="conversation-toolbar"><span className="conversation-title" title={active.title}>{active.title}</span><button className="subtle" disabled={busy} onClick={() => {setRenameValue(active.title);setRenaming(!renaming);}}>Renomear</button><button className="subtle" disabled={busy} onClick={() => perform(() => download(`/conversations/${active.id}/export?format=txt`,'aurora-conversa.txt'))} aria-label="Exportar TXT">Exportar TXT</button><button className="subtle" disabled={busy} onClick={() => perform(() => download(`/conversations/${active.id}/export?format=json`,'aurora-conversa.json'))} aria-label="Exportar JSON">Exportar JSON</button></div>}
-          {renaming && active && <form className="rename-form" onSubmit={e => {e.preventDefault();perform(async () => { const updated=await api(`/conversations/${active.id}`,null,{method:'PATCH',body:JSON.stringify({title:renameValue})});setActive(updated);setRenaming(false);await refreshList();});}}><label className="sr-only" htmlFor="conversation-title">Título da conversa</label><input id="conversation-title" className="text-input" value={renameValue} maxLength={120} onChange={e => setRenameValue(e.target.value)} disabled={busy}/><button className="subtle" disabled={busy || !renameValue.trim()}>Salvar título</button><button type="button" className="subtle" onClick={() => setRenaming(false)} disabled={busy}>Cancelar</button></form>}
-          <div className="conversation-scroll">
-            {messages.length === 0 ? <section className="welcome"><div className="welcome-orbit"><Mark /></div><p className="eyebrow">SUA ASSISTENTE PESSOAL</p><h1>O que vamos<br /><em>construir hoje?</em></h1><p className="muted">Traga uma pergunta, uma ideia ou um plano.<br />Vamos dar o próximo passo juntos.</p>
-              <div className="suggestions">{[['Organizar uma ideia', 'Ajude-me a organizar uma ideia. Comece perguntando o que pretendo desenvolver.'], ['Entender um assunto', 'Quero entender um assunto de forma simples. Pergunte qual é o tema.'], ['Planejar meu dia', 'Ajude-me a planejar meu dia. Pergunte quais são minhas prioridades.']].map(([title, text], i) => <button key={title} disabled={busy} onClick={() => { setDraft(text); input.current?.focus(); }}><span className="suggestion-index"><Icon name={i === 2 ? 'settings' : 'chat'} size={19} /></span><span className="suggestion-copy">{title}<small>{['Dê forma ao seu próximo projeto', 'Explore com explicações simples', 'Encontre seu próximo passo'][i]}</small></span><span aria-hidden="true">↗</span></button>)}</div>
-            </section> : <section className="messages" aria-label="Mensagens">
-              {nextBefore && <button className="subtle" disabled={busy} onClick={() => perform(async () => { const data = await api(`/conversations/${active.id}?before=${nextBefore}`, token); setMessages(old => [...data.messages, ...old]); setNextBefore(data.next_before); })}>Carregar mensagens anteriores</button>}
-              {messages.map(message => <article className={`message ${message.role}`} key={message.id}><div className="message-label">{message.role === 'assistant' ? <><Mark small /> Aurora</> : <><span className="tiny-avatar">EU</span> Você</>}<time>{new Date(message.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</time></div><div className="message-content">{message.content}</div></article>)}
-            </section>}
-            {sending && <p role="status" className="thinking">Aurora está preparando uma resposta<span className="pulse">…</span></p>}<div ref={end} />
-          </div>
-          <div className="composer-wrap">{!config.configured && <p className="setup-notice">Para conversar, preencha GEMINI_API_KEY e GEMINI_MODELS em backend/.env e reinicie o backend.</p>}
-            <form className="composer" onSubmit={send}><label className="sr-only" htmlFor="message">Sua mensagem</label><textarea ref={input} id="message" placeholder="Escreva para Aurora…" maxLength={8000} value={draft} disabled={busy} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(e); } }} rows={3} />
-              <div className="composer-bottom"><div className="model-choice"><span className="provider-label">Gemini</span><label className="sr-only" htmlFor="model">Modelo Gemini</label><select id="model" value={model} onChange={e => setModel(e.target.value)} disabled={busy || !config.models.length}>{config.models.length ? config.models.map(m => <option key={m}>{m}</option>) : <option value="">Gemini · não configurado</option>}</select></div><span className="char-count">{draft.length}/8.000</span><button className="send-button" type="submit" aria-label="Enviar mensagem" disabled={busy || !draft.trim() || !config.configured}><Icon name="send" /><span>Enviar</span></button></div>
-            </form><p className="composer-note">Aurora pode cometer erros. Confira informações importantes. <span>Enter envia · Shift + Enter quebra linha</span></p>
-          </div>
-        </> : <section className="settings-page"><p className="eyebrow">SEU ESPAÇO, SEU CONTROLE</p><h1>{pageTitle}</h1><p className="page-description">{view === 'settings' ? 'Ajuste a Aurora ao seu jeito de conversar.' : 'Exporte, proteja e recupere seus dados.'}</p>
-          {view === 'settings' ? <><Preferences run={perform} busy={busy} /><div className="settings-card"><h2>Aparência</h2><p className="muted">Preferência salva neste navegador.</p><button className="subtle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>Tema atual: {theme === 'dark' ? 'escuro' : 'claro'} · alternar</button></div>
-            <div className="settings-card"><h2>Conexão com Gemini</h2><p>{config.configured ? 'Chave e modelos configurados no servidor.' : 'Configuração incompleta no servidor.'}</p><p className="hint">Configuração detectada não comprova que a chave é válida. O primeiro envio verifica o acesso real.</p><p className="muted">Edite backend/.env e reinicie o FastAPI para alterar a chave ou a lista GEMINI_MODELS. Segredos não são exibidos aqui.</p><button className="subtle" disabled={busy} onClick={() => perform(async () => { const cfg = await api('/config', token); setConfig(cfg); setModel(cfg.models.includes(model) ? model : cfg.models[0] || ''); })}>Atualizar status</button></div>
-            <div className="settings-card"><h2>Cotas e privacidade</h2><p className="muted">{config.cost_notice}</p><p className="muted">Sua mensagem e até 10 interações anteriores desta conversa são enviadas ao Google. O contexto tem limite de 40.000 caracteres; o histórico completo permanece no servidor.</p><a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noreferrer">Consultar preços e condições ↗</a></div></> : <>
-            <div className="settings-card"><h2>Instância pessoal</h2><dl><div><dt>Versão</dt><dd>{config.version}</dd></div><div><dt>Acesso</dt><dd>Proprietário · sessão</dd></div><div><dt>Histórico</dt><dd>SQLite no servidor</dd></div><div><dt>Provedor implementado</dt><dd>Gemini</dd></div></dl></div>
-            <DataPanel run={perform} busy={busy} onRestored={async () => {setActive(null);setMessages([]);setDraft('');setNextBefore(null);retry.current=null;setQuery('');setSearchInput('');setRenaming(false);await refreshList(null,'');}} />
-            <div className="settings-card"><h2>Expansões planejadas</h2><p className="muted">Documentos, Obsidian, plugins, voz, outros provedores e agente local ainda não estão implementados. Não há aprendizado autônomo nem acesso ao seu computador.</p></div>
-          </>}
-        </section>}
-      </main>
-      {sidebar && <button className="sidebar-backdrop" tabIndex={-1} aria-label="Fechar histórico" onClick={() => setSidebar(false)} />}
-      <aside id="history-panel" ref={historyPanel} className={`sidebar ${sidebar ? 'open' : ''}`} aria-label="Histórico de conversas"><div className="sidebar-heading"><span>SEU HISTÓRICO</span><button className="mobile-menu" aria-label="Fechar histórico" onClick={() => setSidebar(false)}><Icon name="close" /></button><span className="owner-badge">Privado</span></div><button className="new-chat" onClick={newConversation} disabled={busy}><Icon name="plus" size={18} /> Nova conversa</button>
-        <form className="search-form" onSubmit={e => {e.preventDefault();perform(async () => {await refreshList(null,searchInput.trim());setQuery(searchInput.trim());});}}><label className="sr-only" htmlFor="search">Buscar conversas</label><input id="search" className="text-input" placeholder="Título ou mensagem" value={searchInput} maxLength={200} onChange={e => setSearchInput(e.target.value)} disabled={busy}/><button className="subtle" disabled={busy}>Buscar</button></form>{query && <button className="subtle clear-search" disabled={busy} onClick={() => perform(async () => {await refreshList(null,'');setQuery('');setSearchInput('');})}>Limpar busca</button>}
-        <div className="history-heading"><h2>Conversas</h2><span>{conversations.length}{hasMore ? '+' : ''}</span></div>
-        <div className="history-list">{conversations.length === 0 ? <p className="hint empty-history">{query ? 'Nenhuma conversa encontrada.' : 'Seu histórico começa com a primeira conversa.'}</p> : conversations.map(c => <div className={`history-item ${active?.id === c.id ? 'active' : ''}`} key={c.id}><button className="history-select" disabled={busy} onClick={() => selectConversation(c.id)} title={c.title}><Icon name="chat" size={15} /><span>{c.title}</span></button><button className="delete-button" disabled={busy} aria-label={`Excluir ${c.title}`} onClick={() => setDeleteTarget(c)}><Icon name="trash" size={15} /></button></div>)}
-          {hasMore && <button className="subtle" disabled={busy} onClick={() => perform(async () => { const list = await api(`/conversations?offset=${conversations.length}&q=${encodeURIComponent(query)}`, token); setConversations(old => [...old, ...list]); setHasMore(list.length === 100); })}>Carregar mais</button>}
-        </div><div className="history-help"><Icon name="shield" size={17} /><p>Suas conversas ficam salvas.<br /><span>Baixe uma cópia em Administração.</span></p></div><div className="sidebar-footer"><span className="status-dot" /><span>Histórico salvo no servidor</span></div>
-      </aside>
-      {deleteTarget && <div className="modal-backdrop" onKeyDown={e => {
-        if (e.key === 'Escape' && !busy) setDeleteTarget(null);
-        if (e.key === 'Tab') { const elements = [...e.currentTarget.querySelectorAll('button:not(:disabled)')]; if (!elements.length) { e.preventDefault(); return; } const first = elements[0], last = elements[elements.length - 1]; if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); } }
-      }}><section role="dialog" aria-modal="true" aria-labelledby="delete-title" className="modal"><h2 id="delete-title">Excluir esta conversa?</h2>{error && <p role="alert" className="error">{error}</p>}<p>“{deleteTarget.title}” e suas mensagens serão apagadas. Esta ação não pode ser desfeita.</p><div className="flex justify-end gap-3"><button id="cancel-delete" className="subtle" disabled={busy} onClick={() => setDeleteTarget(null)}>Cancelar</button><button className="danger" disabled={busy} onClick={() => perform(async () => { await api(`/conversations/${deleteTarget.id}?confirm=true`, token, { method: 'DELETE' }); setConversations(old => old.filter(c => c.id !== deleteTarget.id)); if (active?.id === deleteTarget.id) { setActive(null); setMessages([]); setDraft(''); setNextBefore(null); retry.current = null; } setDeleteTarget(null); })}>Excluir conversa</button></div></section></div>}
-    </>}
-  </div>;
+
+ const historyProps={conversations,active,busy,hasMore,query,pinned,onPin:id=>setPinned(old=>old.includes(id)?old.filter(x=>x!==id):[...old,id]),onSelect:selectConversation,onDelete:setDeleteTarget,onMore:()=>perform(async()=>{const list=await api(`/conversations?offset=${conversations.length}&q=${encodeURIComponent(query)}`);setConversations(old=>[...old,...list]);setHasMore(list.length===100);})};
+ const searchForm=<><form className="search-form" onSubmit={e=>{e.preventDefault();perform(async()=>{await refreshList(null,searchInput.trim());setQuery(searchInput.trim());});}}><Icon name="search" size={15}/><label className="sr-only" htmlFor="history-search">Buscar conversas</label><input id="history-search" placeholder="Buscar conversas…" value={searchInput} maxLength={200} onChange={e=>setSearchInput(e.target.value)} disabled={busy}/><button aria-label="Buscar" title="Buscar" disabled={busy}><Icon name="arrow" size={13}/></button></form>{query&&<button className="subtle clear-search" disabled={busy} onClick={()=>perform(async()=>{await refreshList(null,'');setQuery('');setSearchInput('');})}>Limpar busca</button>}</>;
+ const pageTitle=navItems.find(n=>n[0]===view)?.[1]||'Aurora';
+ return <div className={`app-shell ${navCollapsed?'nav-collapsed':''}`}>
+ {checkingSession?<main className="login-screen"><p role="status">Verificando acesso…</p></main>:!authenticated?<main className="login-screen"><form onSubmit={login} className="login-card"><Mark/><p className="eyebrow">ASSISTENTE PESSOAL · V0.3</p><h1>Bem-vindo à Aurora.</h1><p className="muted">Um espaço para suas ideias, pesquisas e projetos.</p><label htmlFor="owner-token">Token do proprietário</label><input id="owner-token" type="password" autoComplete="current-password" required value={loginToken} onChange={e=>setLoginToken(e.target.value)} placeholder="Cole seu token de acesso"/><p className="hint">Use AURORA_OWNER_TOKEN de backend/.env. A chave Gemini fica somente no servidor.</p><label className="check-label"><input type="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)}/>Manter acesso por 7 dias neste dispositivo</label>{error&&<div role="alert" className="error">{error}</div>}<button className="primary" disabled={busy}>{busy?'Conectando…':'Entrar no meu espaço'}<Icon name="arrow"/></button><p className="hint">Use Sair para encerrar a sessão neste navegador.</p></form></main>:<>
+ <aside ref={historyPanel} className={`rail ${sidebar?'open':''}`} aria-label="Menu da Aurora" inert={Boolean(deleteTarget)}><div className="rail-brand"><Mark/><span>Aurora<small>Sua assistente pessoal de IA</small></span><button className="mobile-close" aria-label="Fechar menu e histórico" onClick={()=>setSidebar(false)}><Icon name="close"/></button></div>
+ {(historySide==='left'||compact)&&searchForm}<button className="new-chat" aria-label="Nova conversa" onClick={newConversation} disabled={busy}><Icon name="plus" size={17}/><span>Novo chat</span></button>
+ <nav className="nav-items" aria-label="Navegação principal">{navItems.map(([id,title,icon])=><React.Fragment key={id}><div className="nav-row"><button className={view===id?'selected':''} aria-current={view===id?'page':undefined} aria-label={title} title={title} disabled={busy} onClick={()=>navigate(id)}><Icon name={icon} size={16}/><span>{title}</span></button>{id==='library'&&<button className="submenu-toggle" aria-label="Categorias da biblioteca" aria-expanded={libraryMenu} disabled={busy} onClick={()=>setLibraryMenu(!libraryMenu)}><Icon name="chevron" size={12}/></button>}</div>{id==='library'&&libraryMenu&&<div className="library-submenu">{['Todos','Imagens','Vídeos','Arquivos'].map(f=><button key={f} disabled={busy} onClick={()=>{setLibraryFilter(f);navigate('library');}}>{f==='Todos'?'Todos os itens':f}</button>)}</div>}</React.Fragment>)}</nav>
+ {(historySide==='left'||compact)&&<History {...historyProps}/>}
+ <div className="profile"><span className="avatar">{(profile.name||'EU').slice(0,2).toUpperCase()}</span><span>{profile.name||'Meu espaço'}<small>Acesso pessoal</small></span><button aria-label="Sair" title="Sair" disabled={busy} onClick={logout}><Icon name="exit" size={16}/></button></div></aside>
+ {sidebar&&compact&&<button className="sidebar-backdrop" tabIndex={-1} aria-label="Fechar menu" onClick={()=>setSidebar(false)}/>}
+ <main className="workspace" inert={Boolean((sidebar&&compact)||deleteTarget)}><header className="topbar"><button ref={historyToggle} className="menu-toggle" aria-label={compact?'Abrir menu e histórico':navCollapsed?'Expandir barra lateral':'Recolher barra lateral'} aria-expanded={compact?sidebar:!navCollapsed} onClick={()=>compact?setSidebar(!sidebar):setNavCollapsed(!navCollapsed)}><Icon name="menu" size={19}/></button><span className="top-caption">{pageTitle}</span><span className="version">v0.3 · Cosmic UI</span>{historySide==='right'&&!compact&&<button className="history-toggle" aria-label={rightOpen?'Recolher histórico':'Abrir histórico'} aria-expanded={rightOpen} onClick={()=>setRightOpen(!rightOpen)}><Icon name="chat" size={16}/><span>Histórico</span></button>}</header>
+ {error&&<div role="alert" className="error global-error">{error}<button aria-label="Fechar erro" onClick={()=>setError('')}><Icon name="close" size={16}/></button></div>}
+ <Suspense fallback={<p role="status" className="loading-module">Carregando…</p>}>
+ {view==='chat'?<div className={`chat-page ${messages.length?'has-messages':'is-home'}`}>
+ {active&&messages.length>0&&<div className="conversation-toolbar"><span className="conversation-title" title={active.title}>{active.title}</span><button className="subtle" disabled={busy} onClick={()=>{setRenameValue(active.title);setRenaming(!renaming);}}>Renomear</button><button className="subtle" disabled={busy} onClick={()=>perform(()=>download(`/conversations/${active.id}/export?format=txt`,'aurora-conversa.txt'))}>Exportar TXT</button><button className="subtle" disabled={busy} onClick={()=>perform(()=>download(`/conversations/${active.id}/export?format=json`,'aurora-conversa.json'))}>Exportar JSON</button></div>}
+ {renaming&&active&&<form className="rename-form" onSubmit={e=>{e.preventDefault();perform(async()=>{const updated=await api(`/conversations/${active.id}`,null,{method:'PATCH',body:JSON.stringify({title:renameValue})});setActive(updated);setRenaming(false);await refreshList();});}}><label className="sr-only" htmlFor="conversation-title">Título da conversa</label><input id="conversation-title" className="text-input" value={renameValue} maxLength={120} onChange={e=>setRenameValue(e.target.value)} disabled={busy}/><button className="subtle" disabled={busy||!renameValue.trim()}>Salvar título</button><button type="button" className="subtle" onClick={()=>setRenaming(false)} disabled={busy}>Cancelar</button></form>}
+ <div className="conversation-scroll">{messages.length===0?<Home name={profile.name} onPrompt={prompt} onPlanned={setPlanned} onAgents={openAgents} busy={busy} configured={config.configured}/>:<section className="messages" aria-label="Mensagens">{nextBefore&&<button className="subtle" disabled={busy} onClick={()=>perform(async()=>{const data=await api(`/conversations/${active.id}?before=${nextBefore}`);setMessages(old=>[...data.messages,...old]);setNextBefore(data.next_before);})}>Carregar mensagens anteriores</button>}{messages.map(message=><article className={`message ${message.role}`} key={message.id}><div className="message-label">{message.role==='assistant'?<><Mark small/>Aurora</>:<><span className="tiny-avatar">EU</span>Você</>}<time>{new Date(message.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</time></div><div className="message-content">{message.content}</div></article>)}</section>}{sending&&<p role="status" className="thinking">Aurora está preparando uma resposta<span className="pulse">…</span></p>}<div ref={end}/></div>
+ <div className="composer-wrap">{planned&&<div className="planned-notice" role="status"><Icon name="tools" size={16}/><span>{planned} está em desenvolvimento. Nesta versão, o chat recebe somente texto.</span><button aria-label="Fechar aviso" onClick={()=>setPlanned('')}><Icon name="close" size={14}/></button></div>}{!config.configured&&<p className="setup-notice">Configure a chave e o modelo no servidor para conversar. Veja Configurações → Modelos de IA.</p>}
+ <form className="composer" onSubmit={send}><label className="sr-only" htmlFor="message">Sua mensagem</label><textarea ref={input} id="message" placeholder="Digite sua mensagem aqui…" maxLength={8000} value={draft} disabled={busy} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();send(e);}}} rows={2}/><div className="composer-bottom"><div className="composer-tools"><button type="button" aria-label="Adicionar anexos: em desenvolvimento" title="Anexos em desenvolvimento" onClick={()=>setPlanned('Anexos')}><Icon name="plus" size={16}/></button>{[['Arquivos','file'],['Imagem','image'],['Pesquisa','search']].map(([title,icon])=><button type="button" className="composer-tool" key={title} aria-label={title} title="Em desenvolvimento" onClick={()=>setPlanned(title)}><Icon name={icon} size={13}/><span>{title}</span></button>)}<button type="button" className="composer-tool" onClick={()=>navigate('tools')}><Icon name="tools" size={13}/><span>Ferramentas</span></button></div><div className="model-choice"><Icon name="spark" size={15}/><label className="sr-only" htmlFor="model">Modelo Gemini</label><select id="model" value={model} onChange={e=>setModel(e.target.value)} disabled={busy||!config.models.length}>{config.models.length?config.models.map(m=><option key={m}>{m}</option>):<option value="">Gemini · não configurado</option>}</select></div><button className="send-button" type="submit" aria-label="Enviar mensagem" disabled={busy||!draft.trim()||!config.configured}><Icon name="send" size={20}/></button></div></form>
+ {messages.length===0&&<QuickActions onPrompt={prompt} busy={busy}/>}<p className="composer-note">Aurora pode cometer erros. Confira informações importantes.<span> Enter envia · Shift + Enter quebra linha</span></p></div></div>:
+ view==='agents'?<Agents key={agentSearch} config={config} model={model} onModel={setModel} onUse={()=>prompt(null)} initial={agentSearch} busy={busy}/>:
+ view==='library'?<Library key={libraryFilter} initial={libraryFilter}/>:
+ view==='plugins'||view==='tools'?<Tools key={view} plugins={view==='plugins'}/>:
+ view==='computer'?<Computer/>:
+ view==='organization'?<Organization onBackup={()=>{setSettingsTab('Dados');navigate('settings');}}/>:
+ <SettingsPanel tab={settingsTab} onTab={setSettingsTab} theme={theme} onTheme={setTheme} accent={accent} onAccent={setAccent} effects={effects} onEffects={setEffects} historySide={historySide} onHistorySide={setHistorySide} config={config} model={model} onModel={setModel} run={perform} busy={busy} profile={profile} onPreferences={setProfile} onLogout={logout} onConfig={async()=>{const cfg=await api('/config');setConfig(cfg);setModel(cfg.models.includes(model)?model:chooseModel(cfg));}} onRestored={async()=>{setActive(null);setMessages([]);setDraft('');setNextBefore(null);retry.current=null;setQuery('');setSearchInput('');setRenaming(false);await refreshList(null,'');const prefs=await api('/preferences');setProfile(prefs.saved||{name:''});}}/>}
+ </Suspense></main>
+ {historySide==='right'&&!compact&&rightOpen&&<aside className="right-history" aria-label="Painel direito de conversas"><div className="right-history-heading"><h2>Conversas</h2><button aria-label="Recolher histórico" onClick={()=>setRightOpen(false)}><Icon name="close" size={16}/></button></div>{searchForm}<History {...historyProps}/></aside>}
+ {deleteTarget&&<div className="modal-backdrop" onKeyDown={e=>{if(e.key==='Escape'&&!busy)setDeleteTarget(null);if(e.key==='Tab'){const elements=[...e.currentTarget.querySelectorAll('button:not(:disabled)')];if(!elements.length){e.preventDefault();return;}const first=elements[0],last=elements[elements.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}}}><section role="dialog" aria-modal="true" aria-labelledby="delete-title" className="modal"><h2 id="delete-title">Excluir esta conversa?</h2>{error&&<p role="alert" className="error">{error}</p>}<p>“{deleteTarget.title}” e suas mensagens serão apagadas. Esta ação não pode ser desfeita.</p><div className="action-row"><button id="cancel-delete" className="subtle" disabled={busy} onClick={()=>setDeleteTarget(null)}>Cancelar</button><button className="danger" disabled={busy} onClick={()=>perform(async()=>{await api(`/conversations/${deleteTarget.id}?confirm=true`,null,{method:'DELETE'});setConversations(old=>old.filter(c=>c.id!==deleteTarget.id));if(active?.id===deleteTarget.id){setActive(null);setMessages([]);setDraft('');setNextBefore(null);retry.current=null;}setDeleteTarget(null);})}>Excluir conversa</button></div></section></div>}
+ </>}
+ </div>;
 }
