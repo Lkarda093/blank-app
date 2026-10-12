@@ -4,8 +4,11 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 from ..auth.dependencies import require_owner
-from ..database import connect
+from ..database import connect, bump_revision
 from ..providers.base import ProviderError
+from ..memory.routes import preference_instruction
+from ..data.routes import download
+import json
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_owner)])
 
@@ -40,22 +43,63 @@ class SendMessage(BaseModel):
 @router.get("/config")
 def config(request: Request):
     s = request.app.state.settings
-    return {"version": "0.1.0", "provider": "Gemini", "models": s.models,
+    return {"version": "0.2.0", "provider": "Gemini", "models": s.models,
             "configured": bool(s.api_key and s.models), "max_message_chars": 8000,
             "context_turns": 10, "context_chars": 40000,
             "cost_notice": "A API pode ter cotas e custos. O aplicativo não consulta saldo nem garante uso gratuito. Confira seu projeto no Google AI Studio."}
 
 @router.get("/conversations")
-def list_conversations(request: Request, offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=100)):
+def list_conversations(request: Request, offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=100), q: str = Query("", max_length=200)):
+    # Literal substring search: %, _ and SQL text have no wildcard meaning.
     with connect(request.app.state.settings.database) as db:
-        return [dict(r) for r in db.execute("SELECT * FROM conversations ORDER BY updated_at DESC, id LIMIT ? OFFSET ?", (limit, offset))]
+        return [dict(r) for r in db.execute("""SELECT c.* FROM conversations c
+            WHERE instr(casefold(c.title),casefold(?))>0 OR EXISTS (
+                SELECT 1 FROM turns t WHERE t.conversation_id=c.id
+                AND (instr(casefold(t.user_text),casefold(?))>0 OR instr(casefold(t.assistant_text),casefold(?))>0))
+            ORDER BY c.updated_at DESC,c.id LIMIT ? OFFSET ?""", (q, q, q, limit, offset))]
 
 @router.post("/conversations", status_code=201)
-def create_conversation(request: Request):
-    cid, timestamp = str(uuid4()), now()
+async def create_conversation(request: Request):
+    if request.app.state.send_lock.locked():
+        raise HTTPException(409, "Aguarde a operação em andamento.")
+    async with request.app.state.send_lock:
+        cid, timestamp = str(uuid4()), now()
+        with connect(request.app.state.settings.database) as db:
+            db.execute("INSERT INTO conversations VALUES (?, ?, ?, ?)", (cid, "Nova conversa", timestamp, timestamp))
+            bump_revision(db)
+            return require_conversation(db, cid)
+
+class Rename(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    @field_validator("title")
+    @classmethod
+    def not_blank(cls, value):
+        if not value.strip():
+            raise ValueError("Informe um título.")
+        return value.strip()
+
+@router.patch("/conversations/{cid}")
+async def rename(cid: UUID, payload: Rename, request: Request):
+    if request.app.state.send_lock.locked():
+        raise HTTPException(409, "Aguarde a operação em andamento.")
+    async with request.app.state.send_lock:
+        with connect(request.app.state.settings.database) as db:
+            require_conversation(db, cid)
+            db.execute("UPDATE conversations SET title=?, updated_at=? WHERE id=?", (payload.title, now(), str(cid)))
+            bump_revision(db)
+            return require_conversation(db, cid)
+
+@router.get("/conversations/{cid}/export")
+def export(cid: UUID, request: Request, format: str = Query("json", pattern="^(json|txt)$")):
     with connect(request.app.state.settings.database) as db:
-        db.execute("INSERT INTO conversations VALUES (?, ?, ?, ?)", (cid, "Nova conversa", timestamp, timestamp))
-        return require_conversation(db, cid)
+        db.execute("BEGIN")
+        conversation = require_conversation(db, cid)
+        turns = db.execute("SELECT * FROM turns WHERE conversation_id=? ORDER BY id", (str(cid),)).fetchall()
+        messages = messages_from_turns(turns)
+    if format == "txt":
+        text = conversation["title"] + "\n\n" + "\n\n".join(f'{"Você" if m["role"] == "user" else "Aurora"} ({m["created_at"]}):\n{m["content"]}' for m in messages)
+        return download(text, f"aurora-conversa-{cid}.txt", "text/plain")
+    return download(json.dumps({"format": "aurora-conversation", "version": 1, "conversation": conversation, "messages": messages}, ensure_ascii=False, indent=2), f"aurora-conversa-{cid}.json")
 
 @router.get("/conversations/{cid}")
 def get_conversation(cid: UUID, request: Request, before: int | None = Query(None, ge=1)):
@@ -75,6 +119,7 @@ async def delete_conversation(cid: UUID, request: Request, confirm: bool = False
         with connect(request.app.state.settings.database) as db:
             require_conversation(db, cid)
             db.execute("DELETE FROM conversations WHERE id=?", (str(cid),))
+            bump_revision(db)
 
 @router.post("/conversations/{cid}/messages")
 async def send_message(cid: UUID, payload: SendMessage, request: Request):
@@ -91,18 +136,20 @@ async def send_message(cid: UUID, payload: SendMessage, request: Request):
                 if existing["user_text"] != payload.content or existing["model"] != payload.model:
                     raise HTTPException(409, "Identificador de envio já usado para outra mensagem.")
                 return {"messages": messages_from_turns([existing])}
+            personalization = preference_instruction(db)
             turns = list(reversed(db.execute("SELECT * FROM turns WHERE conversation_id=? ORDER BY id DESC LIMIT 10", (str(cid),)).fetchall()))
         # Keep full pairs and bound cost; old history remains in SQLite.
         while turns and sum(len(t["user_text"]) + len(t["assistant_text"]) for t in turns) + len(payload.content) > 40000:
             turns.pop(0)
         context = messages_from_turns(turns) + [{"role": "user", "content": payload.content}]
         try:
-            answer = await state.provider.generate(payload.model, context)
+            answer = await state.provider.generate(payload.model, context, personalization=personalization)
         except ProviderError as exc:
             raise HTTPException(exc.status, exc.message) from None
         timestamp = now()
         with connect(state.settings.database) as db:
             db.execute("INSERT INTO turns(conversation_id, request_id, user_text, assistant_text, model, created_at) VALUES (?, ?, ?, ?, ?, ?)", (str(cid), str(payload.request_id), payload.content, answer, payload.model, timestamp))
-            db.execute("UPDATE conversations SET title=CASE WHEN title='Nova conversa' THEN ? ELSE title END, updated_at=? WHERE id=?", (payload.content[:60], timestamp, str(cid)))
+            db.execute("UPDATE conversations SET title=CASE WHEN title='Nova conversa' AND (SELECT COUNT(*) FROM turns WHERE conversation_id=?)=1 THEN ? ELSE title END, updated_at=? WHERE id=?", (str(cid), payload.content[:60], timestamp, str(cid)))
+            bump_revision(db)
             turn = db.execute("SELECT * FROM turns WHERE conversation_id=? AND request_id=?", (str(cid), str(payload.request_id))).fetchone()
             return {"messages": messages_from_turns([turn])}

@@ -1,22 +1,24 @@
-# Aurora 0.1 — assistente pessoal
+# Aurora 0.2 — assistente pessoal
 
 Uma base pequena para sua assistente: React + Vite + Tailwind CSS, FastAPI, Gemini e histórico SQLite. Interface em português, clara/escura, responsiva, com histórico à direita. Esta é uma nova implementação; não modifica nem migra automaticamente projetos Streamlit ou o pacote Aurora anterior.
 
-**Comece pela seção 2.** A versão 0.1 termina aqui: nenhuma versão futura deve ser implementada sem sua autorização.
+**Já usa a 0.1? Comece por [Atualizar para 0.2](docs/ATUALIZAR_0.2.md).** Para uma instalação nova, siga a seção 2. A pasta e branch continuam chamadas `aurora-v0.1` para facilitar a atualização. Nenhuma versão seguinte será implementada sem sua autorização.
 
 ## 1. O que está implementado
+
+Novidades da 0.2: busca e renomeação de conversas; exportação em TXT/JSON; backup completo JSON; restauração com prévia, confirmação e cópia de recuperação; preferências editáveis e consentidas; sessão no navegador com opção de 7 dias. Migração automática do SQLite preserva o histórico da 0.1 e gera uma cópia anterior à atualização.
 
 - Frontend React funcional, envio de texto e exibição das respostas.
 - Adaptador real para a API REST Gemini `generateContent` por HTTPS; sem respostas fictícias no aplicativo normal.
 - Histórico por conversa, salvo em SQLite; criação e exclusão com confirmação.
-- Autenticação simples de proprietário com token, verificado em toda rota de dados.
+- Autenticação do proprietário por token na entrada e sessão HttpOnly no navegador. Bearer continua disponível para clientes da API.
 - Seleção entre os modelos explicitamente autorizados em `GEMINI_MODELS`.
 - Tema persistido no navegador. A chave da API nunca é enviada ao navegador.
-- Configurações com status real de configuração e instruções; painel administrativo básico de leitura.
+- Configurações com preferências e status real de conexão; painel administrativo com estatísticas, backup e restauração.
 - Erros para configuração ausente, cota, permissão, modelo indisponível, conexão, timeout e resposta bloqueada.
 - Contexto limitado, paginação do histórico e proteção contra duplicação de envios concluídos.
 
-**Não implementado:** voz, anexos, imagens/vídeos, pesquisa web, biblioteca, Obsidian, plugins, memória de preferências, usuários adicionais, agente local e outros provedores. Referências a biblioteca/plugins na interface são identificadas como planejamento. As respostas são texto simples; Markdown e código aparecem como texto, sem execução ou HTML.
+**Não implementado:** voz, anexos, imagens/vídeos, pesquisa web, biblioteca, Obsidian, plugins, usuários adicionais, agente local e outros provedores. Referências a biblioteca/plugins na interface são identificadas como planejamento. As respostas são texto simples; Markdown e código aparecem como texto, sem execução ou HTML.
 
 ## 2. Primeiro uso no GitHub Codespaces
 
@@ -90,7 +92,7 @@ O script inicia o backend em `127.0.0.1:8000` e o frontend na porta 5173. O nave
 
 No computador local Linux/macOS, os mesmos comandos funcionam. Abra http://localhost:5173. No Windows, utilize WSL para esses comandos Bash. O acesso pelo celular nesta versão é pelo endereço HTTPS privado do Codespace, com autenticação no GitHub e token Aurora. O computador local não é exposto automaticamente.
 
-**O token fica apenas na memória da página:** recarregar ou fechar exige entrar novamente. Só o tema é salvo em localStorage. O frontend serve uma tela de login, mas dados de conversas só são entregues após autenticação no backend.
+**Sessão no navegador:** o token digitado não é salvo em localStorage. O servidor emite um cookie HttpOnly e SameSite=Strict. Em HTTPS, o cookie também é Secure. Sem a opção de lembrar, a sessão dura no máximo 12 horas; com a opção, até 7 dias. Recarregar não exige outro login. Use Sair para revogar a sessão deste navegador. Só o tema é salvo em localStorage.
 
 ### Alternativa: dois terminais
 
@@ -107,22 +109,25 @@ Segundo terminal, na raiz do projeto, para Codespaces:
 npm --prefix frontend run dev -- --host 0.0.0.0
 ```
 
-Para uso local, omita `-- --host 0.0.0.0`. Não use vários workers: a versão 0.1 permite apenas uma geração por vez por instância.
+Para uso local, omita `-- --host 0.0.0.0`. Não use vários workers: a versão 0.2 permite apenas uma geração por vez por instância.
 
 ## 3. Como verificar o funcionamento
 
 1. Sem chave/modelo: a interface entra, mas avisa sobre configuração incompleta e desabilita enviar.
 2. Com chave/modelo válidos: envie “Responda apenas: Olá”. Deve surgir a resposta real do Google.
 3. Envie uma segunda mensagem sobre a primeira. O contexto anterior será enviado junto.
-4. Recarregue a página, entre novamente e abra a conversa no histórico.
+4. Recarregue a página: a sessão deve continuar ativa. Abra a conversa no histórico.
 5. Pare e reinicie a aplicação. O histórico deverá continuar no banco.
 6. Alterne o tema e recarregue: o tema deve persistir.
 7. Exclua uma conversa: primeiro cancele; depois confirme e verifique o desaparecimento.
-8. Faça logout: a lista e o conteúdo são removidos da tela.
+8. Faça logout: a lista e o conteúdo são removidos da tela e a sessão é revogada.
+9. Renomeie e busque uma conversa; exporte-a em TXT e JSON.
+10. Salve preferências com consentimento, edite e apague-as.
+11. Baixe um backup completo. Teste a restauração somente com dados de teste ou após preservar uma cópia importante; confira a prévia e a cópia de recuperação.
 
-O Google recebe a mensagem atual e até 10 pares anteriores da mesma conversa, com limite de 40.000 caracteres no contexto. Conversas diferentes não compartilham contexto. O banco mantém o histórico completo. Máximo de 8.000 caracteres por mensagem e 4.096 tokens de saída solicitados. Uma resposta que atinge esse limite recebe um aviso.
+O Google recebe as preferências autorizadas (quando salvas), a mensagem atual e até 10 pares anteriores da mesma conversa, com limite de 40.000 caracteres no contexto. Conversas diferentes não compartilham contexto. O banco mantém o histórico completo. Máximo de 8.000 caracteres por mensagem e 4.096 tokens de saída solicitados. Uma resposta que atinge esse limite recebe um aviso.
 
-Em erro de geração, nenhuma troca parcial é gravada e o texto permanece no campo. Ao reenviar sem alterar texto/modelo/conversa, o navegador reutiliza o identificador: se a troca já foi salva, ela é devolvida sem nova geração. Recarregar a página perde o rascunho e esse identificador; confira o histórico antes de reenviar. Timeout ou queda entre o processamento no Google e a gravação local pode consumir cota mesmo sem resposta salva. Não há repetição automática de chamadas pagas.
+Em erro de geração, nenhuma troca parcial é gravada e o texto permanece no campo. Ao reenviar sem alterar texto/modelo/conversa, o navegador reutiliza o identificador: se a troca já foi salva, ela é devolvida sem nova geração. Recarregar a página perde o rascunho e esse identificador; confira o histórico antes de reenviar. Timeout ou queda entre o processamento no Google e a gravação local pode consumir cota mesmo sem resposta salva. Não há repetição automática de chamadas pagas. Preferências autorizadas, quando salvas, são enviadas como personalização adicional ao provedor.
 
 ## 4. Testes e compilação
 
@@ -158,7 +163,9 @@ aurora-v0.1/
 │   │   ├── main.py
 │   │   ├── config.py
 │   │   ├── database.py
-│   │   ├── auth/dependencies.py
+│   │   ├── auth/{dependencies.py,routes.py}
+│   │   ├── memory/routes.py
+│   │   ├── data/routes.py
 │   │   ├── conversations/routes.py
 │   │   └── providers/{base.py,gemini.py}
 │   └── tests/
@@ -167,9 +174,9 @@ aurora-v0.1/
 │   ├── package-lock.json
 │   ├── vite.config.js
 │   ├── index.html
-│   └── src/{App.jsx,main.jsx,style.css,api.js,api.test.js}
-├── scripts/{configure.py,list_models.py,start.sh}
-└── docs/{ARQUITETURA.md,VALIDACAO.md}
+│   └── src/{App.jsx,Preferences.jsx,DataPanel.jsx,main.jsx,style.css,api.js,api.test.js}
+├── scripts/{configure.py,list_models.py,start.sh,browser_test.py}
+└── docs/{ARQUITETURA.md,VALIDACAO.md,ATUALIZAR_0.2.md}
 ```
 
 `backend/data/aurora.sqlite3` é criado na primeira execução. Os arquivos SQLite `-wal` e `-shm` podem existir enquanto o servidor está ativo. Nenhum dado pessoal ou segredo é incluído no pacote.
@@ -189,11 +196,11 @@ Local: http://localhost:8000/docs. No Codespaces, se precisar de Swagger, encami
 | POST | `/api/conversations/{id}/messages` | Enviar `content`, `model`, `request_id` UUID |
 | DELETE | `/api/conversations/{id}?confirm=true` | Excluir conversa e mensagens |
 
-Todas as rotas de dados exigem `Authorization: Bearer TOKEN`. Segredos não são retornados. Erros incluem `detail` em português. Não há CORS aberto, autenticação por cookie, upload, endpoint para comandos ou acesso a caminhos do computador.
+Todas as rotas de dados exigem bearer ou uma sessão válida. Escritas por cookie e entrada/saída precisam do cabeçalho `X-Aurora-Request: 1`; se houver Origin, ele precisa corresponder ao Host. A interface envia esses dados automaticamente. Segredos não são retornados. Erros incluem `detail` em português. Não há CORS aberto, execução de comandos ou acesso a caminhos enviados pelo navegador. Upload de backup recebe apenas JSON validado, nunca SQL executável.
 
 ## 7. Backup e recuperação manual
 
-A versão 0.1 não tem botão de backup/exportação. Para uma cópia simples e consistente, **pare o servidor primeiro** com Ctrl+C, na raiz do projeto:
+A versão 0.2 oferece backup/restauração pelo painel administrativo: consulte [as instruções](docs/ATUALIZAR_0.2.md). Para uma cópia SQLite manual e consistente, **pare o servidor primeiro** com Ctrl+C, na raiz do projeto:
 
 ```bash
 mkdir -p backups
@@ -208,7 +215,7 @@ Para restaurar: pare a aplicação, faça uma cópia da pasta de dados atual, mo
 
 ## 8. Segurança e limites
 
-Uso pessoal de desenvolvimento: um proprietário e um processo FastAPI. O token concede acesso a todos os dados; não o compartilhe. Para revogar, gere outro token, altere `.env` e reinicie. Autenticação multiusuário, sessões revogáveis, proteção contra força bruta distribuída e publicação de produção não fazem parte desta entrega. Mantenha as portas privadas.
+Uso pessoal de desenvolvimento: um proprietário e um processo FastAPI. O token e a sessão concedem acesso a todos os dados; proteja o acesso ao navegador e à conta. Para revogar, gere outro token, altere `.env` e reinicie. Autenticação multiusuário, proteção contra força bruta distribuída e publicação de produção não fazem parte desta entrega. Sair revoga a sessão atual; trocar o token revoga todas após reinício. O login aplica uma limitação básica em memória. Mantenha as portas privadas.
 
 O arquivo `.env` e o SQLite são protegidos por permissões de arquivo no Linux, mas **não são criptografados pelo aplicativo**. Qualquer pessoa com acesso à sua conta/Codespace/disco pode lê-los. Não cole dados sensíveis sem avaliar as condições do provedor. O aplicativo não mede seu saldo, não bloqueia gastos no Google e não torna APIs pagas gratuitas.
 
@@ -241,3 +248,25 @@ Não há ferramentas oferecidas ao modelo. Pedidos do modelo não podem modifica
 - Tailwind com Vite: https://tailwindcss.com/docs/installation/using-vite
 
 As condições do provedor podem mudar. Esta base não promete disponibilidade de um modelo específico nem funcionamento remoto sem configuração e teste com sua conta.
+
+## 11. API da versão 0.2
+
+| Método | Caminho | Finalidade |
+| --- | --- | --- |
+| POST | `/api/auth/login` | Token e opção remember; cria cookie |
+| GET | `/api/auth/session` | Verifica sessão |
+| POST | `/api/auth/logout` | Revoga sessão e apaga cookie |
+| GET | `/api/conversations?q=texto` | Busca título ou mensagens |
+| PATCH | `/api/conversations/{id}` | Renomeia com `title` |
+| GET | `/api/conversations/{id}/export?format=txt` | Exporta todas as mensagens; aceita também json |
+| GET / PUT / DELETE | `/api/preferences` | Consulta/salva/apaga preferências; PUT precisa `consent: true`, DELETE `?confirm=true` |
+| GET | `/api/data/stats` | Contagens e revisão |
+| GET | `/api/data/backup` | Download do backup completo |
+| POST | `/api/data/restore/preview` | Recebe JSON completo e retorna resumo, revisão e ticket |
+| POST | `/api/data/restore` | Mesmo JSON, com cabeçalhos de confirmação, revisão e ticket |
+| GET | `/api/data/recovery` | Lista cópias anteriores às restaurações |
+| GET | `/api/data/recovery/{id}` | Download da cópia de recuperação |
+
+Restauração: `X-Aurora-Confirm: RESTAURAR`, `X-Aurora-Revision: REVISAO` e `X-Aurora-Preview: TICKET` retornados pela prévia; se houver preferências, `X-Aurora-Preferences-Consent: 1`. O ticket vincula o arquivo conferido à revisão atual. Arquivo alterado, dados modificados ou confirmação ausente impedem a substituição. A interface cuida de tudo isso.
+
+Testes opcionais de navegador: instale temporariamente Playwright no frontend conforme docs/VALIDACAO.md e execute `python scripts/browser_test.py` com as portas livres e a venv ativada. O harness cria banco temporário e usa exclusivamente o provedor explicitamente simulado de testes.

@@ -49,3 +49,17 @@ def test_missing_key_does_not_call_network():
 def test_output_limit_notice():
     result = asyncio.run(call(lambda r:httpx.Response(200,json={'candidates':[{'finishReason':'MAX_TOKENS','content':{'parts':[{'text':'Parte'}]}}]})))
     assert 'limite de saída' in result
+
+def test_saved_preferences_are_sent_as_system_personalization():
+    import json
+    async def run():
+        def handler(request):
+            body=json.loads(request.content)
+            instruction=body['systemInstruction']['parts'][0]['text']
+            assert 'Willhas' in instruction and 'conciso' in instruction
+            assert 'Você não possui ferramentas' in instruction
+            assert body['contents'][0]['parts'][0]['text']=='Oi'
+            return httpx.Response(200,json={'candidates':[{'finishReason':'STOP','content':{'parts':[{'text':'Olá!'}]}}]})
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await GeminiProvider(client,'fake-key').generate('test-model',[{'role':'user','content':'Oi'}],personalization='Preferências autorizadas: Willhas, conciso')
+    assert asyncio.run(run())=='Olá!'

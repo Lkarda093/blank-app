@@ -7,7 +7,7 @@ class GeminiProvider:
         self.client = client
         self.api_key = api_key
 
-    async def generate(self, model: str, messages: list[dict]) -> str:
+    async def generate(self, model: str, messages: list[dict], personalization: str = "") -> str:
         if not self.api_key:
             raise ProviderError(503, "Configure GEMINI_API_KEY em backend/.env e reinicie o servidor.")
         contents = [{"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]} for m in messages]
@@ -15,7 +15,7 @@ class GeminiProvider:
             response = await self.client.post(
                 f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
                 headers={"x-goog-api-key": self.api_key},
-                json={"contents": contents, "systemInstruction": {"parts": [{"text": "Você é Aurora, uma assistente pessoal. Responda em português do Brasil, salvo pedido diferente. Seja clara e honesta. Você não possui ferramentas, acesso a arquivos ou pesquisa web. Não afirme ter executado ações externas."}]},
+                json={"contents": contents, "systemInstruction": {"parts": [{"text": "Você é Aurora, uma assistente pessoal. Responda em português do Brasil, salvo pedido diferente. Seja clara e honesta. Você não possui ferramentas, acesso a arquivos ou pesquisa web. Não afirme ter executado ações externas." + personalization}]},
                       "generationConfig": {"maxOutputTokens": 4096}},
             )
         except httpx.TimeoutException:

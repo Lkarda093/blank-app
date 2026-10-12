@@ -1,19 +1,18 @@
-# Iniciar Aurora 0.1
+# Aurora 0.2 — iniciar e atualizar
 
-Abra um novo Codespace na branch aurora-v0.1. A instalação de dependências ocorre automaticamente na criação do contêiner. Aguarde terminar.
+Se já usa a Aurora, abra [Atualizar para 0.2](aurora-v0.1/docs/ATUALIZAR_0.2.md). A branch e a pasta continuam chamadas aurora-v0.1 para facilitar a atualização e manter o caminho do histórico.
 
-No terminal:
+No Codespace existente, pare a aplicação com Ctrl+C e execute um comando por vez:
 
 ```bash
 cd /workspaces/blank-app/aurora-v0.1
-.venv/bin/python scripts/configure.py
+git pull --ff-only origin aurora-v0.1
+npm --prefix frontend ci
 bash scripts/start.sh
 ```
 
-Digite sua chave Gemini somente no configurador, nunca no GitHub. Informe um modelo de texto disponível na sua conta. Se não souber o modelo, deixe vazio e execute `.venv/bin/python scripts/list_models.py`; depois preencha GEMINI_MODELS em backend/.env.
+Abra a porta 5173 privada e recarregue a página. Use o mesmo token existente; a chave Gemini e o modelo ficam no backend/.env. O banco é migrado automaticamente, com cópia SQLite anterior à migração. Não apague o .env nem a pasta de dados.
 
-Abra a porta 5173 como privada. Entre com AURORA_OWNER_TOKEN, localizado em aurora-v0.1/backend/.env. Não use a chave Gemini na tela de login.
+Instalação nova: [README completo](aurora-v0.1/README.md). O Codespace novo nesta branch instala dependências na criação. Configure uma vez com `.venv/bin/python scripts/configure.py` e inicie com `bash scripts/start.sh`.
 
-A Aurora antiga permanece na raiz. O projeto novo está na pasta aurora-v0.1. Não houve migração de dados. Detalhes e testes: aurora-v0.1/README.md e aurora-v0.1/docs/VALIDACAO.md.
-
-A chamada real ao Gemini exige sua chave e está pendente. Modelos e cotas dependem de sua conta.
+Novidades: busca/renomeação, exportação de conversas, preferências consentidas, backup/restauração com confirmação e recuperação, sessão lembrada opcional por 7 dias. Consulte [validação](aurora-v0.1/docs/VALIDACAO.md).

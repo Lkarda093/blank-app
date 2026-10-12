@@ -1,75 +1,76 @@
-# Arquitetura e critérios — Aurora 0.1
+# Arquitetura e critérios — Aurora 0.2
 
-## Objetivo e aceitação
+## Escopo
 
-Criar uma base de chat pessoal leve, com código legível e separação entre interface, API, persistência e provedor. A versão é aceita quando: o frontend compila; o backend inicia; a autenticação bloqueia acesso indevido; conversas podem ser criadas, recuperadas após reinício e excluídas mediante confirmação; o tema persiste; envios válidos são encaminhados ao adaptador Gemini; erros não expõem segredos nem salvam trocas incompletas; os testes locais passam. A aceitação da integração remota depende adicionalmente de um envio real usando a conta do proprietário.
+A 0.2 acrescenta controle dos dados à base de chat: exportação por conversa, busca/renomeação, backup completo e restauração, preferências autorizadas e sessão no navegador. Mantém React/Vite/Tailwind, FastAPI/HTTPX e SQLite, sem novas dependências de produção. O repositório e a pasta continuam `aurora-v0.1` para manter os comandos e caminhos do proprietário.
 
-## Decisões
+## Critérios de aceitação
 
-| Componente | Decisão e motivo |
+- Chat, histórico e autenticação existentes continuam funcionando.
+- Migração de um SQLite com schema 1 preserva as conversas e mensagens, cria uma cópia anterior à atualização e passa ao schema 2.
+- Exportação TXT/JSON contém todas as mensagens da conversa, independentemente da paginação da tela.
+- Busca consulta títulos e ambos os lados da conversa como trecho literal, com casefold Unicode. `%` e `_` não são curingas.
+- Preferências só são salvas mediante consentimento explícito; podem ser lidas, editadas, exportadas e apagadas. Preferências salvas entram nas próximas chamadas ao Gemini.
+- Backup JSON completo contém histórico e preferências; exclui credenciais, configurações e sessões.
+- Restauração valida schema, limites, identificadores, relações e datas; exige prévia vinculada ao arquivo/revisão, confirmação e consentimento para preferências.
+- Mudanças depois da prévia, chamadas concorrentes, arquivo inválido e falha ao preservar a cópia anterior impedem a troca.
+- Sessão continua após reload/reinício, expira e é revogada ao sair ou trocar o token.
+- Interface responsiva e testes passam antes de enviar a versão ao GitHub.
+
+## Componentes
+
+| Componente | Responsabilidade |
 | --- | --- |
-| Frontend | React 19, Vite 7 e Tailwind 4. Sem biblioteca grande de componentes, fontes externas ou imagens |
-| Backend | FastAPI assíncrono, documentação OpenAPI automática e validação Pydantic |
-| Transporte Google | HTTPX com HTTPS, timeout e chave em cabeçalho; adaptador implementa Protocol |
-| Banco | SQLite nativo, chaves estrangeiras, transações, WAL e versão de schema 1 |
-| Segurança | Token aleatório do proprietário em servidor; bearer apenas na memória do browser |
-| Rede | Navegador → Vite `/api` → FastAPI; same origin sem CORS permissivo |
-| Contexto | Até 10 pares completos mais a mensagem atual, até 40.000 caracteres |
-| Confiabilidade | ID por envio; gravação do par em uma transação; sem retries automáticos |
-| Concorrência | Uma geração ativa por instância, 409 para concorrentes; um worker obrigatório |
-| UI | Identidade botânica discreta, histórico à direita, navegação compacta, painel móvel |
+| `backend/app/conversations/routes.py` | CRUD, envio, busca, renomeação e exportação |
+| `backend/app/providers` | Adaptador real Gemini; Protocol com personalização opcional |
+| `backend/app/auth` | Bearer para API; entrada, cookie de sessão, expiração e logout |
+| `backend/app/memory/routes.py` | Preferências opt-in e composição de personalização |
+| `backend/app/data/routes.py` | Snapshot, download, validação de backup e restauração |
+| `backend/app/database.py` | Conexões, migração, tabelas, transações e revisão dos dados |
+| `frontend/src/App.jsx` | Chat, histórico, busca, navegação e sessão |
+| `frontend/src/Preferences.jsx` | Editor e consentimento de preferências |
+| `frontend/src/DataPanel.jsx` | Estatísticas, backup, prévia, confirmação e recuperação |
+| `frontend/src/api.js` | Requisições same-origin, cabeçalho CSRF e downloads |
 
-As tabelas são `conversations` e `turns`. Cada turn guarda mensagem do usuário, resposta, modelo, data e request_id. O uso de um par em uma linha torna atômica a gravação da troca. Um índice único impede duplicação local. O DELETE tem cascata para as trocas; as consultas usam parâmetros SQL.
+## Dados e migração
 
-Persistência é server-side: se o servidor está no Codespaces, o histórico está no Codespaces, não no celular. Isso é a base híbrida inicial: interface leve e persistência controlada pelo proprietário, inferência em API externa. Nenhum agente instalado no computador é necessário agora.
+Schema 1: `conversations` e `turns`. Schema 2 adiciona `preferences`, `sessions` e `metadata`. Cada turn é um par de mensagem/resposta, com request_id único por conversa. Índice e relações originais são mantidos.
 
-## Fluxo de um envio
+O início com schema 1 cria uma cópia via `sqlite3.Connection.backup` antes da migração. O schema é alterado em transação e possui guarda contra bancos de uma versão superior. Reiniciar com schema 2 não repete essa cópia. A aplicação continua usando um único processo FastAPI.
 
-1. React mantém o token somente em memória e cria um request_id UUID.
-2. FastAPI valida autenticação, conteúdo, modelo autorizado e existência da conversa.
-3. O servidor verifica se o mesmo envio já foi concluído.
-4. O contexto recente é lido e limitado; a transação SQLite é fechada antes da chamada de rede.
-5. O adaptador envia a solicitação ao Google. Não existem ferramentas ou funções executáveis pelo modelo.
-6. Em sucesso, usuário/resposta e título são gravados atomicamente; em falha, nada é salvo.
-7. React apresenta texto seguro, sem interpretar HTML. O rascunho só é limpo após sucesso.
+`metadata.data_revision` aumenta em cada alteração de conversa, troca ou preferências. Login/logout não alteram essa revisão. Na prévia de restauração, um ticket HMAC vincula a revisão e o conteúdo normalizado do arquivo. A substituição exige a mesma revisão e ticket; não admite confirmação de uma prévia para outro arquivo.
 
-O request_id protege repetições de envios já gravados. Não garante exatamente uma cobrança no provedor: uma queda após o Google processar e antes de gravar pode consumir cota e exigir nova chamada. O rascunho não persiste após recarregar.
+O backup portátil tem formato `aurora-backup`, schema_version 2 e inclui `exported_at`, `conversations`, `turns` e `preferences`. A exportação de conversa tem outro formato e não é aceita como backup completo.
 
-## Organização futura, ainda não implementada
+## Transações de restauração
 
-| Área | Módulo futuro | Fronteira prevista |
-| --- | --- | --- |
-| Conversas | `conversations` existente | Exportação, busca, títulos editáveis |
-| Provedores | `providers` existente | Um adaptador real por serviço; sem chaves no browser |
-| Memória | `memory` | Preferências opt-in, revisão, edição, exportação e exclusão |
-| Conhecimento | `library` | Uploads com tamanho/tipo permitidos, origem e permissões |
-| Usuários | `auth` existente; futuro `users` | Sessões e controle de papéis antes de acesso compartilhado |
-| Configurações | `config.py` existente | Configuração validada; segredos separados de dados |
-| Plugins | `plugins` | Manifestos, permissões mínimas e confirmação de ações |
-| Voz | `voice` | Adaptadores STT/TTS; consentimento antes de enviar áudio |
-| Dispositivos | `devices` | Agente separado, pastas permitidas e leitura apenas |
+1. Ler upload com limite de 16 MiB e validar JSON/schema antes de qualquer exclusão.
+2. Verificar a confirmação RESTAURAR, ticket, revisão e consentimento das preferências.
+3. Rejeitar se houver geração/operação em andamento; adquirir o bloqueio da instância.
+4. Iniciar transação SQLite IMMEDIATE e conferir novamente a revisão.
+5. Criar JSON de recuperação com os dados atuais, em arquivo exclusivo com modo 0600, flush e fsync.
+6. Apagar/inserir histórico e preferências dentro da transação, preservando IDs do arquivo.
+7. Aumentar revisão e confirmar. Erro de gravação/inserção causa rollback; a cópia anterior é mantida.
 
-Não criamos pastas e endpoints vazios para aparentar funções prontas. Os módulos futuros deverão surgir com sua funcionalidade e testes em uma versão autorizada.
+A restauração substitui o conjunto inteiro; não mescla backups. Sessões e chave/token não são restaurados nem apagados. Cópias anteriores são acessadas por UUID, nunca por caminho arbitrário fornecido pelo navegador.
 
-## Quatro memórias
+## Acesso
 
-1. **Histórico:** implementado por conversa, persistente e apagável. Exportação estruturada/edição ainda pendentes; backup manual do SQLite disponível.
-2. **Preferências:** futuras, propostas pela assistente e salvas só após confirmação. O usuário poderá corrigir/excluir. Tema atual é preferência local simples, fora da memória de IA.
-3. **Documentos:** futuros, com armazenamento de origem e autorizações. Busca semântica só será adicionada após avaliar necessidade e custo. Obsidian começa por leitura de pastas expressamente autorizadas.
-4. **Erros e melhorias:** futuro registro revisável, sem segredos nem aprendizado irrestrito. Alterações no código continuarão manuais, versionadas e testadas. Agora há apenas mensagens de erro e logs operacionais mínimos.
+O token do proprietário continua em backend/.env e é usado na entrada. O servidor gera um segredo aleatório distinto para o cookie; apenas o digest HMAC é persistido. O HMAC usa o token do proprietário como chave, portanto sua rotação invalida sessões anteriores após reinício.
 
-Não há memória oculta entre conversas, treinamento automático ou modificações de produção pela IA.
+Cookie: HttpOnly, SameSite=Strict, path /api; Secure em HTTPS e hosts públicos. Cookie sem persistência explícita e sessão de 12 horas por padrão; remember cria cookie com validade de 7 dias. O token mestre nunca é gravado em localStorage. Sair remove o registro da sessão e o cookie; a opção de lembrar não impede a revogação.
 
-## Riscos e limites
+Escritas via cookie exigem X-Aurora-Request: 1 e, se houver Origin, origem correspondente ao Host. Não há CORS permissivo. Login tem limite básico de 5 falhas em um minuto por instância. Não é um sistema multiusuário nem uma solução de rate limiting distribuído.
 
-- Chave válida não assegura cota, acesso a qualquer modelo nem gratuidade. O catálogo pode mudar. O modelo fica configurável no servidor.
-- SQLite e `.env` não têm criptografia própria. Proteção da conta, disco e backups cabe ao proprietário.
-- Vite é servidor de desenvolvimento. Publicação em produção requer HTTPS, serviço para arquivos compilados, autenticação mais completa, limitação de requisições e revisão de implantação.
-- Não iniciar vários workers/processos com o mesmo banco nesta versão. O bloqueio de geração é em memória.
-- O histórico cresce em disco. A UI carrega páginas, mas não há política automática de retenção.
-- O modelo pode inventar informações. Sem pesquisa web, voz ou ferramentas, não deve declarar execução de ações.
-- Chave revogada ou modelo descontinuado: corrigir configuração e reiniciar; nunca fazer fallback silencioso para outro provedor pago.
+## Memória
 
-## Sequência entregue
+- Histórico: persistente, buscável, exportável, apagável e restaurável.
+- Preferências: nome, estilo e notas; criadas/alteradas manualmente com autorização. Enviadas como dados de personalização adicionais ao Gemini. Excluir deixa de enviá-las nas próximas chamadas, mas não apaga chats e backups antigos.
+- Conhecimento/documentos: ainda planejado, incluindo Obsidian e busca semântica.
+- Erros e melhorias: ainda planejado; atualmente há apenas logs operacionais mínimos, sem aprendizado autônomo ou alterações de código pela IA.
 
-Arquitetura → configuração/autenticação → schema SQLite → rotas → adaptador Gemini → frontend → testes → documentação. Versão 0.2 depende de autorização explícita do proprietário.
+## Limites e próximos módulos
+
+Backup portátil: 16 MiB, 10.000 conversas e 100.000 pares, limites adicionais por campo. Para bancos maiores, cópia manual SQLite com a aplicação parada. As 20 recuperações mais recentes são exibidas; as demais permanecem em disco. Não há expurgo automático nem criptografia própria.
+
+Busca é literal e não é semântica. Preferências não treinam o modelo. A aplicação não consulta saldo/custos do Google. Conteúdo continua texto simples. Voz, documentos, plugins, outros provedores, avatar e agente local não fazem parte da 0.2; módulos futuros dependem de autorização.

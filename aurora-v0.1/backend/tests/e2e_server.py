@@ -6,7 +6,7 @@ from app.main import create_app
 from app.providers.base import ProviderError
 
 class BrowserTestProvider:
-    async def generate(self, model, messages):
+    async def generate(self, model, messages, personalization=""):
         if messages[-1]['content'] == 'test-quota':
             raise ProviderError(429, 'Cota simulada para teste de interface.')
         return 'RESPOSTA SIMULADA DE TESTE: ' + messages[-1]['content']

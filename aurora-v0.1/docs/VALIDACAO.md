@@ -1,81 +1,74 @@
-# Validação executada — versão 0.1
+# Validação — Aurora 0.2
 
-Data: 11/10/2026. Ambiente Linux, Python 3.12.14, Node 24.19.0. Dependências efetivamente instaladas estão fixadas nos arquivos de requisitos e package-lock.json.
+Execução concluída em 12/10/2026. Linux, Python 3.12.14 e Node 24.19.0. Versões instaladas fixadas nos requisitos e package-lock.
 
 | Verificação | Resultado |
 | --- | --- |
-| Compilação Python (`compileall`) | Passou |
-| Sintaxe Bash (`bash -n scripts/start.sh`) | Passou |
-| Backend (`pytest -q`) | 30 testes passaram |
-| Cliente JavaScript (`npm test`) | 5 testes passaram |
-| Frontend (`npm run build`) | Compilação concluída |
-| Dependências de produção JS (`npm audit --omit=dev --audit-level=high`) | 0 vulnerabilidades reportadas naquele momento; não equivale a auditoria de segurança completa |
-| Inicialização pelo `scripts/start.sh` | FastAPI e Vite iniciaram; proxy `/api`, SQLite e autenticação responderam |
-| Configuração sem chave Gemini | Envio recusado corretamente com 503, sem chamada externa |
-| Navegador Chromium, desktop 1440×1000 | Fluxos descritos abaixo passaram; inspeção visual realizada |
-| Navegador Chromium, móvel 390×844 | Painel móvel e envio passaram, sem overflow horizontal; inspeção visual realizada |
-| Chamada real ao Google com credenciais do proprietário | **Não executada: não foi fornecida uma chave** |
-| Codespace real da conta do proprietário | **Não executado**; configuração e instruções fornecidas |
-| Safari, Firefox, Android físico, Windows nativo | **Não executados** |
+| Testes Python completos | 57 passaram |
+| Cliente JavaScript | 6 passaram |
+| Compilação Python e sintaxe Bash | Passaram |
+| Build React/Vite/Tailwind | Concluído |
+| Teste Chromium em desktop 1440×1000 | Passou |
+| Teste Chromium móvel 390×844 | Passou, com inspeção visual |
+| Migração de SQLite schema 1 para 2 | Testada com dados existentes e cópia anterior preservada |
+| Sessão após reinício da API | Testada com SQLite persistente |
+| Chamada real Gemini da 0.1 | Confirmada pelo proprietário nesta conversa, usando gemini-3.8-flash |
+| Personalização real Gemini da 0.2 com a conta do proprietário | Pendente após atualizar o Codespace; não temos acesso à chave |
+| Instalação da 0.2 no Codespace do proprietário | Pendente após baixar a atualização |
 
-## Cobertura backend
+## Cobertura
 
-Autenticação e omissão de segredos; criação; histórico; persistência ao recriar o aplicativo usando o mesmo arquivo; exclusão com confirmação e cascata; request_id idempotente e colisão; rejeição de mensagem vazia/extensa; modelo não autorizado; conversa inexistente; falha sem gravação parcial; reenvio após falha; contexto limitado com histórico preservado; paginação; bloqueio de envio/exclusão concorrentes.
+Os testes anteriores de chat, autenticação, falhas do Gemini, persistência, confirmação/cascata de exclusão, idempotência, paginação e configuração continuam na suíte.
 
-O adaptador Gemini foi exercitado com transporte HTTP controlado: endpoint e cabeçalho corretos, roles user/model, filtragem de partes de pensamento, 400/401/403/404/429/500/503, ausência de texto, bloqueio, resposta malformada, timeout, erro de conexão, chave ausente e saída interrompida por limite.
+Novos testes cobrem:
 
-A suíte emitiu um aviso de depreciação do TestClient do Starlette sobre HTTPX. Os testes passaram; não foi necessária mudança de biblioteca HTTP para a versão 0.1.
+- Renomeação, limites, busca Unicode literal, caracteres SQL tratados como texto e exportação completa além da página carregada.
+- Consentimento obrigatório, atualização/exclusão de preferências e personalização enviada ao adaptador e no corpo HTTP do Gemini.
+- Snapshot sem credenciais ou sessões, prévia, confirmação, assinatura do arquivo, revisão, consentimento e restauração com cópia anterior recuperável.
+- Arquivos de schema errado, campos desconhecidos, relações órfãs, identificadores duplicados, datas inválidas, JSON malformado e limites de tamanho.
+- Mudança nos dados após a prévia; restauração durante geração; rollback diante de falha SQL e falha ao criar a cópia anterior.
+- Rotas de dados inacessíveis sem autenticação; sessão HttpOnly, SameSite e Secure; cabeçalho/Origin em escritas; logout, expiração, rotação do token e limitação de tentativas de login.
+- Migração real de um banco com schema 1, preservação do par de mensagens e cópia SQLite anterior; reinício com schema 2 não repete a cópia.
 
-## Navegador: o que foi real e o que foi simulado
+A suíte Python emite um aviso de depreciação do TestClient Starlette sobre HTTPX; nenhum teste falhou.
 
-React, Vite, proxy HTTP, FastAPI, autenticação e SQLite foram reais. Apenas o provedor de IA foi substituído por `backend/tests/e2e_server.py`. Suas mensagens começam com **RESPOSTA SIMULADA DE TESTE**. Esse servidor nunca é usado por `scripts/start.sh`.
+## O que foi real no teste de navegador
 
-O navegador verificou: token incorreto, login correto, envio/resposta, erro de cota mantendo rascunho, tema persistente após reload, novo login e abertura do histórico persistente, páginas de configuração/administração, cancelamento e confirmação de exclusão, painel do histórico em tela móvel, envio em tela móvel e logout. Não houve exceções JavaScript durante o fluxo.
+Frontend React, Vite, proxy, API FastAPI, cookies, SQLite, downloads, uploads e restauração foram reais. Somente a IA foi substituída pelo servidor exclusivamente de testes `backend/tests/e2e_server.py`, com mensagens iniciadas por **RESPOSTA SIMULADA DE TESTE**. O comando normal `start.sh` usa `app.main:app` e o Gemini real.
 
-A ferramenta de navegador usada nesta execução precisou de um Chromium alternativo disponível por pacote, pois o download padrão do Playwright falhou no ambiente. Esse navegador de QA não faz parte das dependências ou do ZIP da Aurora.
+O fluxo validou: rejeição de token incorreto, entrada lembrada, reload sem nova senha, ausência de token em localStorage, envio, renomeação, busca por mensagem, exportações TXT/JSON, consentimento/salvamento/exportação/exclusão de preferências, backup completo, recusa de JSON inválido, prévia e confirmação com consentimento, restauração removendo conversa posterior ao backup, download da cópia anterior com os dados removidos, persistência de preferências após reload, painel móvel, envio móvel, tema, confirmação/cancelamento de exclusão, logout e novo reload sem sessão. Não houve exceções JavaScript no fluxo completo.
 
-## Reproduzir teste opcional de navegador
+## Reproduzir verificações básicas
 
-Os testes básicos do README são suficientes para o uso inicial. Este teste extra baixa navegador e dependências de desenvolvimento; não é necessário no computador fraco para executar a assistente.
+Na raiz do projeto, com .venv ativada:
 
-1. Com a aplicação normal **parada**, instale temporariamente Playwright:
+```bash
+python -m pip install -r backend/requirements-dev.txt
+python -m compileall -q backend/app scripts
+bash -n scripts/start.sh
+cd backend
+python -m pytest -q
+cd ..
+npm --prefix frontend test
+npm --prefix frontend run build
+```
+
+## Teste de navegador opcional
+
+Não é necessário baixar Playwright para usar a assistente. Para QA, pare a aplicação normal e instale temporariamente:
 
 ```bash
 cd frontend
 npm install --no-save --package-lock=false playwright
 npx playwright install chromium
 cd ..
+python scripts/browser_test.py
 ```
 
-2. No primeiro terminal, na raiz do projeto, com a venv ativada, inicie um banco temporário e provedor SIMULADO:
+O harness inicia a API de testes e o Vite, cria um SQLite temporário e encerra os processos/removes os dados ao terminar. As portas 8000 e 5173 devem estar livres. `npm --prefix frontend ci` remove as dependências temporárias e repõe exatamente as normais.
 
-```bash
-cd backend
-AURORA_E2E_DB="$(mktemp /tmp/aurora-e2e-XXXXXX.sqlite3)" python -m uvicorn tests.e2e_server:app_factory --factory --host 127.0.0.1 --port 8000
-```
+Nesta execução foi usado um Chromium alternativo de QA já disponível no ambiente, selecionado por `AURORA_TEST_CHROMIUM`, devido à falha anterior do download padrão. O navegador de QA não é incluído no projeto ou nas dependências de produção. Screenshots serviram somente à inspeção interna.
 
-3. No segundo terminal, na raiz do projeto:
+## Limites da verificação
 
-```bash
-npm --prefix frontend run dev
-```
-
-4. No terceiro terminal, na raiz do projeto:
-
-```bash
-node frontend/tests/browser-smoke.cjs
-```
-
-O token do servidor de testes é deliberadamente fixo e só deve ser usado com esse servidor em localhost. Não é uma credencial para a aplicação normal. Encerre ambos os processos com Ctrl+C. `npm --prefix frontend ci` restaura exatamente as dependências normais do lockfile e remove pacotes opcionais extras.
-
-## Tamanho do build
-
-Build observado: JavaScript aproximadamente 239 kB (75 kB gzip), CSS aproximadamente 16 kB (4,4 kB gzip). Sem fontes externas, biblioteca de ícones, imagens pesadas ou modelos locais. Não foi realizado benchmark de RAM ou carga concorrente. Não há promessa de desempenho em hardware não testado.
-
-## Aceitação remota pendente
-
-O código da integração Gemini é real, mas sucesso de HTTP simulado não comprova disponibilidade, cota ou autorização no Google. Para concluir a aceitação remota, configure sua chave/modelo, envie uma mensagem pelo aplicativo normal e confirme a resposta. Consulte custos e limites no projeto Google antes de gerar conteúdo. Nenhuma versão seguinte foi implementada.
-
-## Correção de configuração em 11/10/2026
-
-Corrigido o caminho de leitura de backend/.env: a configuração usava a pasta principal do projeto. Dois testes adicionais verificam que a raiz é backend e que o arquivo é lido mesmo quando o terminal está em outra pasta. A suíte Python completa passou com 30 testes após a correção.
+Não foi realizado benchmark de RAM/carga, teste em Android físico, Safari, Firefox ou Windows nativo. Build: aproximadamente 251 kB JS (78 kB gzip) e 18 kB CSS (4,9 kB gzip), sem modelos locais ou fontes externas. A suíte não faz chamadas pagas ao Google. Confirmar a atualização e o uso das preferências com Gemini real depende de executar a 0.2 com a configuração já existente no Codespace do proprietário.

@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { api } from './api.js';
+import { api, download } from './api.js';
+import Preferences from './Preferences.jsx';
+import DataPanel from './DataPanel.jsx';
 
 function Icon({ name, size = 20 }) {
   const paths = {
@@ -16,7 +18,14 @@ function Mark({ small = false }) { return <span className={`mark ${small ? 'smal
 
 export default function App() {
   const [theme, setTheme] = useState(() => { try { return localStorage.getItem('aurora-theme') || 'dark'; } catch { return 'dark'; } });
-  const [token, setToken] = useState('');
+  const token = null; // Requests use the HttpOnly session cookie.
+  const [authenticated, setAuthenticated] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [remember, setRemember] = useState(false);
+  const [query, setQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [renameValue, setRenameValue] = useState('');
+  const [renaming, setRenaming] = useState(false);
   const [loginToken, setLoginToken] = useState('');
   const [config, setConfig] = useState(null);
   const [conversations, setConversations] = useState([]);
@@ -43,34 +52,36 @@ export default function App() {
   async function perform(work) {
     if (gate.current) return;
     gate.current = true; setBusy(true); setError('');
-    try { await work(); } catch (e) { setError(e.message); }
+    try { await work(); } catch (e) { setError(e.message); if(e.status===401) { setAuthenticated(false); setMessages([]); setConversations([]); setActive(null); } }
     finally { gate.current = false; setBusy(false); }
   }
-  async function refreshList(auth = token) {
-    const list = await api('/conversations', auth);
+  async function refreshList(auth = token, search = query) {
+    const list = await api(`/conversations?q=${encodeURIComponent(search)}`, auth);
     setConversations(list); setHasMore(list.length === 100);
   }
   async function login(event) {
     event.preventDefault();
     await perform(async () => {
       const auth = loginToken.trim();
-      const [cfg, list] = await Promise.all([api('/config', auth), api('/conversations', auth)]);
+      await api('/auth/login', null, { method: 'POST', body: JSON.stringify({token:auth, remember}) });
+      setLoginToken('');
+      const [cfg, list] = await Promise.all([api('/config'), api('/conversations')]);
       setConfig(cfg); setModel(cfg.models[0] || ''); setConversations(list); setHasMore(list.length === 100);
-      setToken(auth); setLoginToken('');
+      setAuthenticated(true); setQuery(''); setSearchInput('');
     });
   }
   async function selectConversation(id) {
     await perform(async () => {
       const data = await api(`/conversations/${id}`, token);
       setActive(data); setMessages(data.messages); setNextBefore(data.next_before);
-      setDraft(''); retry.current = null; setView('chat'); setSidebar(false);
+      setDraft(''); retry.current = null; setRenaming(false); setView('chat'); setSidebar(false);
     });
   }
   async function newConversation() {
     await perform(async () => {
       const data = await api('/conversations', token, { method: 'POST' });
       setActive(data); setMessages([]); setNextBefore(null); setDraft(''); retry.current = null;
-      setConversations(old => [data, ...old]); setView('chat'); setSidebar(false);
+      setQuery(''); setSearchInput(''); await refreshList(null, ''); setRenaming(false); setView('chat'); setSidebar(false);
     });
   }
   async function send(event) {
@@ -98,21 +109,35 @@ export default function App() {
       } finally { setSending(false); }
     });
   }
-  function logout() {
-    setToken(''); setConfig(null); setConversations([]); setMessages([]); setActive(null);
+  function clearAccount() {
+    setAuthenticated(false); setConfig(null); setConversations([]); setMessages([]); setActive(null);
     setDraft(''); setError(''); setView('chat'); setDeleteTarget(null); retry.current = null;
   }
+  async function logout() { await perform(async () => { await api('/auth/logout',null,{method:'POST'}); clearAccount(); }); }
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        await api('/auth/session');
+        const [cfg, list] = await Promise.all([api('/config'), api('/conversations')]);
+        if(alive) { setConfig(cfg); setModel(cfg.models[0] || ''); setConversations(list); setHasMore(list.length===100); setAuthenticated(true); }
+      } catch(e) { if(alive && e.status!==401) setError(e.message); }
+      finally { if(alive) setCheckingSession(false); }
+    })();
+    return () => { alive=false; };
+  }, []);
   const pageTitle = view === 'chat' ? 'Seu espaço de ideias' : view === 'settings' ? 'Configurações' : 'Painel do proprietário';
   return <div className="app-shell">
-    {!token ? <main className="login-screen"><form onSubmit={login} className="login-card">
-      <Mark /><p className="eyebrow">ASSISTENTE PESSOAL · V0.1</p><h1>Bem-vindo à Aurora.</h1>
+    {checkingSession ? <main className="login-screen"><p role="status">Verificando acesso…</p></main> : !authenticated ? <main className="login-screen"><form onSubmit={login} className="login-card">
+      <Mark /><p className="eyebrow">ASSISTENTE PESSOAL · V0.2</p><h1>Bem-vindo à Aurora.</h1>
       <p className="muted">Um espaço tranquilo para pensar, conversar e construir.</p>
       <label htmlFor="owner-token">Token do proprietário</label>
       <input id="owner-token" type="password" autoComplete="current-password" required value={loginToken} onChange={e => setLoginToken(e.target.value)} placeholder="Cole seu token de acesso" />
       <p className="hint">Use AURORA_OWNER_TOKEN de backend/.env. A chave Gemini fica somente no servidor.</p>
+      <label className="check-label"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />Manter acesso por 7 dias neste dispositivo</label>
       {error && <div role="alert" className="error">{error}</div>}
       <button className="primary" disabled={busy}>{busy ? 'Conectando…' : 'Entrar no meu espaço'} <span aria-hidden="true">↗</span></button>
-      <p className="hint">O token é mantido somente na memória desta página. Ao recarregar, entre novamente.</p>
+      <p className="hint">A sessão permite recarregar sem digitar o token novamente. Use Sair para encerrar o acesso neste navegador.</p>
     </form></main> : <>
       <nav className="rail" aria-label="Navegação principal"><div className="rail-brand"><Mark small /></div>
         <button className={view === 'chat' ? 'selected' : ''} aria-label="Conversar" title="Conversar" onClick={() => setView('chat')} disabled={busy}><Icon name="chat" /></button>
@@ -123,10 +148,12 @@ export default function App() {
       </nav>
       <main className="workspace">
         <header className="topbar"><div><span className="brand">aurora<span className="brand-dot">.</span></span><span className="top-caption">{pageTitle}</span></div>
-          <div className="flex items-center gap-3"><span className="version">v0.1</span><button className="mobile-menu" aria-label="Abrir histórico" onClick={() => setSidebar(!sidebar)}><Icon name="menu" /></button></div>
+          <div className="flex items-center gap-3"><span className="version">v0.2</span><button className="mobile-menu" aria-label="Abrir histórico" onClick={() => setSidebar(!sidebar)}><Icon name="menu" /></button></div>
         </header>
         {error && <div role="alert" className="error global-error">{error}<button aria-label="Fechar erro" onClick={() => setError('')}><Icon name="close" size={16} /></button></div>}
         {view === 'chat' ? <>
+          {active && <div className="conversation-toolbar"><span className="conversation-title" title={active.title}>{active.title}</span><button className="subtle" disabled={busy} onClick={() => {setRenameValue(active.title);setRenaming(!renaming);}}>Renomear</button><button className="subtle" disabled={busy} onClick={() => perform(() => download(`/conversations/${active.id}/export?format=txt`,'aurora-conversa.txt'))}>Texto</button><button className="subtle" disabled={busy} onClick={() => perform(() => download(`/conversations/${active.id}/export?format=json`,'aurora-conversa.json'))}>JSON</button></div>}
+          {renaming && active && <form className="rename-form" onSubmit={e => {e.preventDefault();perform(async () => { const updated=await api(`/conversations/${active.id}`,null,{method:'PATCH',body:JSON.stringify({title:renameValue})});setActive(updated);setRenaming(false);await refreshList();});}}><label className="sr-only" htmlFor="conversation-title">Título da conversa</label><input id="conversation-title" className="text-input" value={renameValue} maxLength={120} onChange={e => setRenameValue(e.target.value)} disabled={busy}/><button className="subtle" disabled={busy || !renameValue.trim()}>Salvar título</button><button type="button" className="subtle" onClick={() => setRenaming(false)} disabled={busy}>Cancelar</button></form>}
           <div className="conversation-scroll">
             {messages.length === 0 ? <section className="welcome"><div className="welcome-orbit"><Mark /></div><p className="eyebrow">UM PENSAMENTO É UM COMEÇO</p><h1>O que vamos<br /><em>construir hoje?</em></h1><p className="muted">Traga uma pergunta, uma ideia ou um plano.<br />Vamos dar o próximo passo juntos.</p>
               <div className="suggestions">{[['Organizar uma ideia', 'Ajude-me a organizar uma ideia. Comece perguntando o que pretendo desenvolver.'], ['Entender um assunto', 'Quero entender um assunto de forma simples. Pergunte qual é o tema.'], ['Planejar meu dia', 'Ajude-me a planejar meu dia. Pergunte quais são minhas prioridades.']].map(([title, text], i) => <button key={title} disabled={busy} onClick={() => { setDraft(text); input.current?.focus(); }}><span className="suggestion-index">0{i + 1}</span>{title}<span aria-hidden="true">↗</span></button>)}</div>
@@ -142,26 +169,27 @@ export default function App() {
             </form><p className="composer-note">Aurora pode cometer erros. Confira informações importantes. <span>Enter envia · Shift + Enter quebra linha</span></p>
           </div>
         </> : <section className="settings-page"><p className="eyebrow">SEU ESPAÇO, SEU CONTROLE</p><h1>{pageTitle}</h1>
-          {view === 'settings' ? <><div className="settings-card"><h2>Aparência</h2><p className="muted">Preferência salva neste navegador.</p><button className="subtle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>Tema atual: {theme === 'dark' ? 'escuro' : 'claro'} · alternar</button></div>
+          {view === 'settings' ? <><Preferences run={perform} busy={busy} /><div className="settings-card"><h2>Aparência</h2><p className="muted">Preferência salva neste navegador.</p><button className="subtle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>Tema atual: {theme === 'dark' ? 'escuro' : 'claro'} · alternar</button></div>
             <div className="settings-card"><h2>Conexão com Gemini</h2><p>{config.configured ? 'Chave e modelos configurados no servidor.' : 'Configuração incompleta no servidor.'}</p><p className="hint">Configuração detectada não comprova que a chave é válida. O primeiro envio verifica o acesso real.</p><p className="muted">Edite backend/.env e reinicie o FastAPI para alterar a chave ou a lista GEMINI_MODELS. Segredos não são exibidos aqui.</p><button className="subtle" disabled={busy} onClick={() => perform(async () => { const cfg = await api('/config', token); setConfig(cfg); setModel(cfg.models.includes(model) ? model : cfg.models[0] || ''); })}>Atualizar status</button></div>
             <div className="settings-card"><h2>Cotas e privacidade</h2><p className="muted">{config.cost_notice}</p><p className="muted">Sua mensagem e até 10 interações anteriores desta conversa são enviadas ao Google. O contexto tem limite de 40.000 caracteres; o histórico completo permanece no servidor.</p><a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noreferrer">Consultar preços e condições ↗</a></div></> : <>
-            <div className="settings-card"><h2>Instância pessoal</h2><dl><div><dt>Versão</dt><dd>{config.version}</dd></div><div><dt>Acesso</dt><dd>Proprietário · token</dd></div><div><dt>Histórico</dt><dd>SQLite no servidor</dd></div><div><dt>Provedor implementado</dt><dd>Gemini</dd></div></dl></div>
-            <div className="settings-card"><h2>Gerenciamento nesta versão</h2><p className="muted">Crie e exclua conversas pelo histórico. Configure segredos no arquivo backend/.env. O README explica backup e recuperação manual com o servidor parado.</p><p className="hint">Banco sem criptografia própria. Proteja sua conta, o computador e os arquivos de backup.</p></div>
-            <div className="settings-card"><h2>Expansões planejadas</h2><p className="muted">Memórias editáveis, documentos, Obsidian, plugins, voz, outros provedores e agente local ainda não estão implementados. Não há aprendizado autônomo nem acesso ao seu computador.</p></div>
+            <div className="settings-card"><h2>Instância pessoal</h2><dl><div><dt>Versão</dt><dd>{config.version}</dd></div><div><dt>Acesso</dt><dd>Proprietário · sessão</dd></div><div><dt>Histórico</dt><dd>SQLite no servidor</dd></div><div><dt>Provedor implementado</dt><dd>Gemini</dd></div></dl></div>
+            <DataPanel run={perform} busy={busy} onRestored={async () => {setActive(null);setMessages([]);setDraft('');setNextBefore(null);retry.current=null;setQuery('');setSearchInput('');setRenaming(false);await refreshList(null,'');}} />
+            <div className="settings-card"><h2>Expansões planejadas</h2><p className="muted">Documentos, Obsidian, plugins, voz, outros provedores e agente local ainda não estão implementados. Não há aprendizado autônomo nem acesso ao seu computador.</p></div>
           </>}
         </section>}
       </main>
       {sidebar && <button className="sidebar-backdrop" aria-label="Fechar histórico" onClick={() => setSidebar(false)} />}
       <aside className={`sidebar ${sidebar ? 'open' : ''}`} aria-label="Histórico de conversas"><div className="sidebar-heading"><span>MEU ESPAÇO</span><button className="mobile-menu" aria-label="Fechar histórico" onClick={() => setSidebar(false)}><Icon name="close" /></button><span className="owner-badge">Pessoal</span></div><button className="new-chat" onClick={newConversation} disabled={busy}><Icon name="plus" size={18} /> Nova conversa</button>
+        <form className="search-form" onSubmit={e => {e.preventDefault();perform(async () => {await refreshList(null,searchInput.trim());setQuery(searchInput.trim());});}}><label className="sr-only" htmlFor="search">Buscar conversas</label><input id="search" className="text-input" placeholder="Buscar título ou mensagem" value={searchInput} maxLength={200} onChange={e => setSearchInput(e.target.value)} disabled={busy}/><button className="subtle" disabled={busy}>Buscar</button></form>{query && <button className="subtle clear-search" disabled={busy} onClick={() => perform(async () => {await refreshList(null,'');setQuery('');setSearchInput('');})}>Limpar busca</button>}
         <div className="history-heading"><h2>Conversas</h2><span>{conversations.length}{hasMore ? '+' : ''}</span></div>
-        <div className="history-list">{conversations.length === 0 ? <p className="hint empty-history">Seu histórico começa com a primeira conversa.</p> : conversations.map(c => <div className={`history-item ${active?.id === c.id ? 'active' : ''}`} key={c.id}><button className="history-select" disabled={busy} onClick={() => selectConversation(c.id)} title={c.title}><Icon name="chat" size={15} /><span>{c.title}</span></button><button className="delete-button" disabled={busy} aria-label={`Excluir ${c.title}`} onClick={() => setDeleteTarget(c)}><Icon name="trash" size={15} /></button></div>)}
-          {hasMore && <button className="subtle" disabled={busy} onClick={() => perform(async () => { const list = await api(`/conversations?offset=${conversations.length}`, token); setConversations(old => [...old, ...list]); setHasMore(list.length === 100); })}>Carregar mais</button>}
+        <div className="history-list">{conversations.length === 0 ? <p className="hint empty-history">{query ? 'Nenhuma conversa encontrada.' : 'Seu histórico começa com a primeira conversa.'}</p> : conversations.map(c => <div className={`history-item ${active?.id === c.id ? 'active' : ''}`} key={c.id}><button className="history-select" disabled={busy} onClick={() => selectConversation(c.id)} title={c.title}><Icon name="chat" size={15} /><span>{c.title}</span></button><button className="delete-button" disabled={busy} aria-label={`Excluir ${c.title}`} onClick={() => setDeleteTarget(c)}><Icon name="trash" size={15} /></button></div>)}
+          {hasMore && <button className="subtle" disabled={busy} onClick={() => perform(async () => { const list = await api(`/conversations?offset=${conversations.length}&q=${encodeURIComponent(query)}`, token); setConversations(old => [...old, ...list]); setHasMore(list.length === 100); })}>Carregar mais</button>}
         </div><div className="roadmap"><span className="eyebrow">PRÓXIMOS CAPÍTULOS</span><p>Biblioteca & plugins</p><span className="hint">Planejados · ainda indisponíveis</span></div><div className="sidebar-footer"><span className="status-dot" /><span>Histórico salvo no servidor</span></div>
       </aside>
       {deleteTarget && <div className="modal-backdrop" onKeyDown={e => {
         if (e.key === 'Escape' && !busy) setDeleteTarget(null);
         if (e.key === 'Tab') { const elements = [...e.currentTarget.querySelectorAll('button:not(:disabled)')]; if (!elements.length) { e.preventDefault(); return; } const first = elements[0], last = elements[elements.length - 1]; if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); } }
-      }}><section role="dialog" aria-modal="true" aria-labelledby="delete-title" className="modal"><h2 id="delete-title">Excluir esta conversa?</h2><p>“{deleteTarget.title}” e suas mensagens serão apagadas. Esta ação não pode ser desfeita.</p><div className="flex justify-end gap-3"><button id="cancel-delete" className="subtle" disabled={busy} onClick={() => setDeleteTarget(null)}>Cancelar</button><button className="danger" disabled={busy} onClick={() => perform(async () => { await api(`/conversations/${deleteTarget.id}?confirm=true`, token, { method: 'DELETE' }); setConversations(old => old.filter(c => c.id !== deleteTarget.id)); if (active?.id === deleteTarget.id) { setActive(null); setMessages([]); setDraft(''); setNextBefore(null); retry.current = null; } setDeleteTarget(null); })}>Excluir conversa</button></div></section></div>}
+      }}><section role="dialog" aria-modal="true" aria-labelledby="delete-title" className="modal"><h2 id="delete-title">Excluir esta conversa?</h2>{error && <p role="alert" className="error">{error}</p>}<p>“{deleteTarget.title}” e suas mensagens serão apagadas. Esta ação não pode ser desfeita.</p><div className="flex justify-end gap-3"><button id="cancel-delete" className="subtle" disabled={busy} onClick={() => setDeleteTarget(null)}>Cancelar</button><button className="danger" disabled={busy} onClick={() => perform(async () => { await api(`/conversations/${deleteTarget.id}?confirm=true`, token, { method: 'DELETE' }); setConversations(old => old.filter(c => c.id !== deleteTarget.id)); if (active?.id === deleteTarget.id) { setActive(null); setMessages([]); setDraft(''); setNextBefore(null); retry.current = null; } setDeleteTarget(null); })}>Excluir conversa</button></div></section></div>}
     </>}
   </div>;
 }

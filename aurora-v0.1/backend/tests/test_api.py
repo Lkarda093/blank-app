@@ -10,7 +10,7 @@ from app.providers.base import ProviderError
 TOKEN = 'test-owner-token-that-is-at-least-32-characters'
 class FakeProvider:
     def __init__(self): self.calls = []; self.error = None
-    async def generate(self, model, messages):
+    async def generate(self, model, messages, personalization=""):
         self.calls.append((model, messages))
         if self.error: raise self.error
         return 'Resposta de teste: ' + messages[-1]['content']

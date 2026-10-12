@@ -1,5 +1,5 @@
 {
-  "name": "Aurora 0.1",
+  "name": "Aurora 0.2",
   "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
   "features": {
     "ghcr.io/devcontainers/features/node:1": {
