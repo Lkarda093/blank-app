@@ -106,7 +106,7 @@ export default function App(){
         const { cid, ...payload } = retry.current;
         const result = await api(`/conversations/${cid}/messages`, token, { method: 'POST', body: JSON.stringify(payload) });
         setMessages(old => [...old.filter(m => !result.messages.some(n => n.id === m.id)), ...result.messages]);
-        if (result.fallback_used) { setModel(result.model_used); setModelNotice(`A cota de ${result.requested_model} foi atingida. Aurora respondeu com ${result.model_used}.`); }
+        if (result.fallback_used) { setModel(result.model_used); setModelNotice(`${result.requested_model} não pôde responder. Aurora respondeu com ${result.model_used}.`); }
         if(document_ids.length){setDocumentConsent(false);setDocumentNotice('Resposta recebida. Revise a seleção e autorize antes de enviar nova pergunta.');}
         setDraft(''); retry.current = null;
         setActive(old => ({ ...old, title: old.title === 'Nova conversa' ? text.slice(0, 60) : old.title }));

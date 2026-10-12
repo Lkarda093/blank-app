@@ -88,3 +88,8 @@ Os testes usam PDFs reais gerados para QA, TXT, API e SQLite reais; apenas o ser
 O parser PDF é executado em um processo separado, com limite de 12 segundos e, no Linux/Codespaces, 256 MiB de memória virtual e 8 segundos de CPU. Não depende de modelos locais, OCR, fontes externas ou ferramentas de execução do assistente. A única dependência nova de produção é `pypdf`.
 
 Testes nesta entrega: ver [VALIDACAO_0.4.md](VALIDACAO_0.4.md). A versão encerra no escopo autorizado; novas etapas dependem de nova autorização.
+
+
+### Correção da troca automática em falhas temporárias
+
+Com a troca automática habilitada, erros HTTP 500/503 persistentes após as três tentativas também permitem tentar o próximo modelo da lista autorizada, além do erro de cota 429. O limite permanece em três modelos e 70 segundos no total por envio. Timeouts, falhas de conexão, erros de chave, bloqueios e respostas inválidas não acionam a troca. A resposta informa o modelo efetivamente utilizado; o aviso não atribui toda troca à cota. A indisponibilidade de todos os modelos ainda pode impedir a resposta.

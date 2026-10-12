@@ -195,13 +195,13 @@ async def send_message(cid: UUID, payload: SendMessage, request: Request):
                         answer = await state.provider.generate(used_model, context, personalization=personalization)
                         break
                     except ProviderError as exc:
-                        if exc.status != 429:
+                        if exc.status != 429 and exc.upstream_status not in (500, 503):
                             raise
                         if used_model == models[-1]:
                             detail = exc.message
                             if len(tried) > 1:
-                                detail = "Cota ou limite atingido nos modelos autorizados tentados: " + ", ".join(tried) + ". Aguarde a renovação dos limites."
-                            raise ProviderError(429, detail) from None
+                                detail = "Nenhum dos modelos autorizados tentados respondeu: " + ", ".join(tried) + ". Último erro: " + exc.message
+                            raise ProviderError(exc.status, detail) from None
         except TimeoutError:
             raise HTTPException(504, "A troca de modelos demorou demais. Confira o histórico antes de reenviar; chamadas podem ter consumido cota.") from None
         except ProviderError as exc:

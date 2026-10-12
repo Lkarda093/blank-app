@@ -30,6 +30,7 @@ def test_upstream_error_redaction(status, expected):
     with pytest.raises(ProviderError) as exc:
         asyncio.run(call(lambda r: httpx.Response(status, text='private secret-test-key upstream body')))
     assert exc.value.status == expected
+    assert exc.value.upstream_status == status
     assert 'secret-test-key' not in exc.value.message and 'upstream body' not in exc.value.message
 
 @pytest.mark.parametrize('data,expected', [({},502), ({'promptFeedback':{'blockReason':'SAFETY'}},422), ({'candidates':[{'finishReason':'SAFETY'}]},422), ([],502)])

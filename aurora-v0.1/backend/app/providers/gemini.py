@@ -45,7 +45,7 @@ class GeminiProvider:
                         500: f"O Gemini retornou uma falha interna (HTTP 500) após {attempts} tentativas. Aguarde um pouco antes de reenviar.",
                         503: f"O Gemini está temporariamente indisponível (HTTP 503) após {attempts} tentativas. Aguarde um pouco antes de reenviar."}
                        .get(status, f"O Gemini retornou um erro (HTTP {status}). Tente novamente mais tarde."))
-            raise ProviderError(429 if status == 429 else 502, message)
+            raise ProviderError(429 if status == 429 else 502, message, upstream_status=status)
         try:
             data = response.json()
             candidates = data.get("candidates") or []

@@ -123,3 +123,39 @@ def test_empty_fallback_list_is_exposed_without_secrets(tmp_path):
         result=client.get('/api/config')
         assert result.json()['free_fallback_models']==[]
         assert 'private-key' not in result.text
+
+
+@pytest.mark.parametrize('upstream_status', [500, 503])
+def test_temporary_failure_switches_only_after_adapter_exhaustion(setup, upstream_status):
+    client, provider, _, cid = setup
+    original = provider.generate
+    async def generate(model, messages, personalization=''):
+        if model == 'primary':
+            provider.calls.append((model, messages, personalization))
+            raise ProviderError(502, 'Falha temporária após três tentativas', upstream_status=upstream_status)
+        return await original(model, messages, personalization)
+    provider.generate = generate
+    data = payload()
+    result = post(client, cid, data)
+    assert result.status_code == 200 and result.json()['model_used'] == 'alternate'
+    assert [c[0] for c in provider.calls] == ['primary', 'alternate']
+    assert provider.calls[0][1:] == provider.calls[1][1:]
+    assert post(client, cid, data).json() == result.json() and len(provider.calls) == 2
+    assert post(client, cid, payload(allow_fallback=False)).status_code == 502
+    assert provider.calls[-1][0] == 'primary' and len(provider.calls) == 3
+
+
+def test_mixed_quota_and_temporary_exhaustion_reports_last_error(setup):
+    client, provider, _, cid = setup
+    async def generate(model, messages, personalization=''):
+        provider.calls.append((model, messages, personalization))
+        if model == 'primary':
+            raise ProviderError(429, 'Cota atingida')
+        raise ProviderError(502, 'HTTP 503 após três tentativas', upstream_status=503)
+    provider.generate = generate
+    result = post(client, cid, payload())
+    assert result.status_code == 502
+    assert 'primary, alternate, third' in result.json()['detail']
+    assert 'HTTP 503' in result.json()['detail']
+    assert len(provider.calls) == 3
+    assert client.get(f'/api/conversations/{cid}').json()['messages'] == []
