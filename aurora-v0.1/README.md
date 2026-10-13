@@ -1,3 +1,7 @@
+# Aurora 0.6.1
+
+Chat com resposta progressiva, anexos compactos e limites sob demanda. [Atualizar para 0.6.1](docs/ATUALIZAR_0.6.1.md). Sem novas dependências ou migração de dados nesta correção.
+
 # Aurora 0.6
 
 Perfis prontos e personalizados, projetos, memória editável, resumos de continuidade revisados, busca nos documentos e chat com Markdown e rascunhos persistentes.

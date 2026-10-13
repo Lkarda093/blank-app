@@ -2,11 +2,15 @@
 from asyncio import sleep, timeout
 import httpx
 from .base import ProviderError
+from .streaming import gemini_stream
 
 class GeminiProvider:
     def __init__(self, client: httpx.AsyncClient, api_key: str):
         self.client = client
         self.api_key = api_key
+
+    def stream(self, model, messages, personalization=""):
+        return gemini_stream(self,model,messages,personalization)
 
     async def generate(self, model: str, messages: list[dict], personalization: str = "") -> str:
         if not self.api_key:

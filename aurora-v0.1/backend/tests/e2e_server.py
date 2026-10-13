@@ -1,11 +1,25 @@
 """Test-only application. DO NOT use this as the normal backend."""
 import os
+import asyncio
 from pathlib import Path
 from app.config import Settings
 from app.main import create_app
 from app.providers.base import ProviderError
 
 class BrowserTestProvider:
+    async def stream(self,model,messages,personalization=""):
+        if messages[-1]['content']=='test-progress':
+            yield 'Primeiro trecho'
+            await asyncio.sleep(0.6)
+            yield ' e conclusão.'
+            return
+        if messages[-1]['content']=='test-partial-error':
+            yield 'Trecho incompleto'
+            raise ProviderError(502,'Conexão de teste interrompida.')
+        result=await self.generate(model,messages,personalization)
+        cut=max(1,len(result)//2)
+        yield result[:cut]
+        yield result[cut:]
     async def generate(self, model, messages, personalization=""):
         if messages[-1]['content'] == 'test-auto-fallback' and model == 'test-model':
             raise ProviderError(429, 'Cota simulada do modelo principal.')

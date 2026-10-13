@@ -179,6 +179,19 @@ const path = require('node:path');
     await page.setViewportSize({width:1440,height:1000});
     if(process.env.AURORA_QA_DESKTOP)await page.screenshot({path:path.join(path.dirname(process.env.AURORA_QA_DESKTOP),'library-desktop-v04.png')});
     console.log('Base 0.4 verificada. Iniciando workspace.');
+    // Progress is observable before completion; interrupted text never becomes history.
+    await click('Chats');await click('Nova conversa');
+    assert.equal(await page.locator('.conversation-documents').count(),0);
+    await page.getByLabel('Sua mensagem',{exact:true}).fill('test-progress');await click('Enviar mensagem');
+    await page.locator('.stream-text').filter({hasText:'Primeiro trecho'}).waitFor();
+    assert.equal(await page.getByRole('button',{name:'Enviar mensagem',exact:true}).isDisabled(),true);
+    await page.getByText('Primeiro trecho e conclusão.',{exact:true}).waitFor();
+    await page.waitForFunction(()=>!document.querySelector('.live-response'));
+    await page.getByLabel('Sua mensagem',{exact:true}).fill('test-partial-error');await click('Enviar mensagem');
+    await page.getByText('Resposta incompleta',{exact:true}).waitFor();
+    assert.equal(await page.getByLabel('Sua mensagem',{exact:true}).inputValue(),'test-partial-error');
+    assert.equal(await page.locator('.message.assistant').count(),1);
+    await click('Nova conversa');
     // Workspace 0.5/0.6: real persistence, controls, Markdown and browser drafts.
     await click('Perfis da Aurora');await click('Criar perfil');
     await page.getByLabel('Nome',{exact:true}).fill('Revisor urbano QA');

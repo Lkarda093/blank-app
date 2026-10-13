@@ -38,7 +38,36 @@ export async function download(path, filename) {
 }
 
 export async function uploadDocument(file) {
-  if (!file || !file.size || file.size > 3 * 1024 * 1024) throw new Error('O arquivo deve ter conteúdo e no máximo 3 MB.');
+  if (!file || !file.size) throw new Error('Este arquivo está vazio. Escolha um arquivo com conteúdo.');
+  if (file.size > 3 * 1024 * 1024) throw new Error('Este arquivo supera 3 MB. Envie uma versão menor.');
   if (!/\.(pdf|txt)$/i.test(file.name)) throw new Error('Envie somente PDF ou TXT UTF-8.');
   return api(`/documents?name=${encodeURIComponent(file.name)}`, null, {method:'POST',body:file,headers:{'Content-Type':'application/octet-stream'}});
+}
+
+export async function streamMessage(path,payload,onEvent){
+ const response=await request(path,null,{method:'POST',body:JSON.stringify(payload)});
+ const reader=response.body?.getReader();
+ if(!reader)throw new Error('O navegador não recebeu o fluxo de resposta. Confira o histórico antes de reenviar.');
+ const decoder=new TextDecoder();let buffer='';
+ try{
+  while(true){
+   const {value,done}=await reader.read();buffer+=decoder.decode(value,{stream:!done});
+   if(buffer.length>2000000)throw new Error('Resposta do servidor fora dos limites.');
+   const lines=buffer.split('\n');buffer=lines.pop();
+   if(done&&buffer){lines.push(buffer);buffer='';}
+   for(const line of lines){
+    if(!line.trim())continue;
+    let event;try{event=JSON.parse(line);}catch{throw new Error('O fluxo da resposta ficou inválido. Confira o histórico antes de reenviar.');}
+    if(event.type==='error'){const error=new Error(event.detail);error.status=event.status;throw error;}
+    if(event.type==='done')return event.result;
+    onEvent?.(event);
+   }
+   if(done)break;
+  }
+  throw new Error('A conexão terminou antes da confirmação. Confira o histórico antes de reenviar; o texto recebido pode estar incompleto.');
+ }catch(error){
+  if(['TimeoutError','AbortError'].includes(error.name))throw new Error('A resposta demorou demais. Confira o histórico antes de reenviar.');
+  if(error instanceof TypeError)throw new Error('A conexão foi interrompida. Confira o histórico antes de reenviar.');
+  throw error;
+ }finally{await reader.cancel().catch(()=>{});}
 }

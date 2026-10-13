@@ -1,4 +1,7 @@
 from asyncio import timeout as generation_timeout
+import asyncio
+from contextlib import suppress
+from fastapi.responses import StreamingResponse
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -66,7 +69,7 @@ def config(request: Request):
     s = request.app.state.settings
     with connect(s.database) as db:
         workspace_id=db.execute("SELECT value FROM metadata WHERE key='workspace_id'").fetchone()[0]
-    return {"workspace_id":workspace_id,"version": "0.6.0", "provider": "Gemini", "models": s.models,
+    return {"workspace_id":workspace_id,"version": "0.6.1", "provider": "Gemini", "models": s.models,
             "free_fallback_models": s.free_fallback_models, "fallback_max_models": 3,
             "configured": bool(s.api_key and s.models), "max_message_chars": 8000,
             "context_turns": 10, "context_chars": 40000,
@@ -156,8 +159,7 @@ async def delete_conversation(cid: UUID, request: Request, confirm: bool = False
             db.execute("DELETE FROM conversations WHERE id=?", (str(cid),))
             bump_revision(db)
 
-@router.post("/conversations/{cid}/messages")
-async def send_message(cid: UUID, payload: SendMessage, request: Request):
+async def generate_message(cid: UUID, payload: SendMessage, request: Request, emit=None):
     state = request.app.state
     if payload.model not in state.settings.models:
         raise HTTPException(400, "Selecione um modelo autorizado em GEMINI_MODELS no servidor.")
@@ -207,10 +209,20 @@ async def send_message(cid: UUID, payload: SendMessage, request: Request):
                 for used_model in models:
                     tried.append(used_model)
                     try:
-                        answer = await state.provider.generate(used_model, context, personalization=personalization)
+                        if emit:
+                            await emit({'type':'status','model':used_model,'detail':'Tentando outro modelo…' if len(tried)>1 else 'Aguardando o Gemini…'})
+                        answer=''
+                        if emit and hasattr(state.provider,'stream'):
+                            async for chunk in state.provider.stream(used_model,context,personalization=personalization):
+                                answer+=chunk
+                                await emit({'type':'delta','text':chunk,'model':used_model})
+                            answer=answer.strip()
+                            if not answer:raise ProviderError(502,'O Gemini não retornou texto.')
+                        else:
+                            answer = await state.provider.generate(used_model, context, personalization=personalization)
                         break
                     except ProviderError as exc:
-                        if exc.status != 429 and exc.upstream_status not in (500, 503):
+                        if answer or (exc.status != 429 and exc.upstream_status not in (500, 503)):
                             raise
                         if used_model == models[-1]:
                             detail = exc.message
@@ -235,3 +247,36 @@ async def send_message(cid: UUID, payload: SendMessage, request: Request):
             if documents_used:
                 db.execute('INSERT INTO turn_document_context VALUES(?,?,?,?,?)',(turn['id'],document_request,json.dumps(documents_used,ensure_ascii=False),json.dumps(sources,ensure_ascii=False),source_warning))
             return turn_result(turn, payload.model, db)
+
+
+@router.post('/conversations/{cid}/messages')
+async def send_message(cid:UUID,payload:SendMessage,request:Request):
+    return await generate_message(cid,payload,request)
+
+@router.post('/conversations/{cid}/messages/stream')
+async def stream_message(cid:UUID,payload:SendMessage,request:Request):
+    # Auth, CSRF and payload validation occur before opening the response.
+    async def events():
+        queue=asyncio.Queue(maxsize=64)
+        async def produce():
+            try:
+                result=await generate_message(cid,payload,request,queue.put)
+                await queue.put({'type':'done','result':result})
+            except HTTPException as exc:
+                await queue.put({'type':'error','status':exc.status_code,'detail':exc.detail})
+            except Exception:
+                await queue.put({'type':'error','status':500,'detail':'Erro interno. Confira o histórico antes de reenviar.'})
+        task=asyncio.create_task(produce())
+        try:
+            yield json.dumps({'type':'status','detail':'Preparando contexto…'})+'\n'
+            while True:
+                try:
+                    event=await asyncio.wait_for(queue.get(),timeout=10)
+                except TimeoutError:
+                    yield json.dumps({'type':'heartbeat'})+'\n';continue
+                yield json.dumps(event,ensure_ascii=False)+'\n'
+                if event['type'] in ('done','error'):break
+        finally:
+            if not task.done():task.cancel()
+            with suppress(asyncio.CancelledError):await task
+    return StreamingResponse(events(),media_type='application/x-ndjson',headers={'X-Accel-Buffering':'no'})

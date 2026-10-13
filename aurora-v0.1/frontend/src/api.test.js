@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api,uploadDocument } from './api.js';
+import { api,uploadDocument,streamMessage } from './api.js';
 test('sends owner bearer and JSON without putting token in URL', async () => {
   globalThis.fetch = async (url, options) => { assert.equal(url, '/api/config'); assert.equal(options.headers.Authorization, 'Bearer owner'); return new Response(JSON.stringify({configured:true})); };
   assert.deepEqual(await api('/config', 'owner'), {configured:true});
@@ -32,4 +32,22 @@ test('rejects unsupported uploads before sending any request',async()=>{
   globalThis.fetch=async()=>{throw new Error('Should not call network');};
   await assert.rejects(uploadDocument(new File(['x'],'photo.png')),/somente PDF/);
   await assert.rejects(uploadDocument(new File([],'empty.txt')),/conteúdo/);
+});
+
+
+test('stream handles fragmented Unicode and reports deltas before completion',async()=>{
+ const wire=[{type:'status',detail:'Aguardando'},{type:'delta',text:'Árvore 🌳'},{type:'done',result:{messages:[]}}].map(e=>JSON.stringify(e)+'\n').join('');
+ const bytes=new TextEncoder().encode(wire);let offset=0;
+ globalThis.fetch=async(url,options)=>{
+  assert.equal(options.headers['X-Aurora-Request'],'1');assert.equal(options.credentials,'same-origin');
+  return new Response(new ReadableStream({pull(controller){if(offset<bytes.length){controller.enqueue(bytes.slice(offset,offset+3));offset+=3;}else controller.close();}}));
+ };
+ const events=[];assert.deepEqual(await streamMessage('/test',{},e=>events.push(e)),{messages:[]});
+ assert.deepEqual(events,[{type:'status',detail:'Aguardando'},{type:'delta',text:'Árvore 🌳'}]);
+});
+test('stream preserves application error and rejects truncated responses',async()=>{
+ globalThis.fetch=async()=>new Response('{"type":"error","status":429,"detail":"Cota esgotada"}\n');
+ await assert.rejects(streamMessage('/test',{}),e=>e.status===429&&e.message==='Cota esgotada');
+ globalThis.fetch=async()=>new Response('{"type":"delta","text":"Parcial"}\n');
+ await assert.rejects(streamMessage('/test',{}),/antes da confirmação/);
 });
