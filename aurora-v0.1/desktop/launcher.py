@@ -15,6 +15,8 @@ import time
 
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(ROOT / 'backend'))
+from app.cloud_policy import CLOUD_NOTICE, CLOUD_NOTICE_VERSION
+from app.credentials import CredentialError, WindowsCredentialStore
 
 
 def data_directory():
@@ -30,52 +32,141 @@ def configure(path):
     old = json.loads(path.read_text('utf-8')) if path.exists() else {}
     root = tk.Tk()
     root.title('Preparar Aurora Desktop')
-    root.geometry('640x390')
-    kind = tk.StringVar(value=old.get('provider', 'llamacpp'))
+    root.geometry('710x630')
+    kind = tk.StringVar(value=old.get('provider', 'gemini'))
     binary = tk.StringVar(value=old.get('binary', ''))
     model = tk.StringVar(value=old.get('model_file', ''))
     ollama = tk.StringVar(value=old.get('model', 'llama3.2:1b'))
+    gemini_model = tk.StringVar(value=old.get('gemini_model', ''))
+    api_key = tk.StringVar()
+    accepted = tk.BooleanVar(value=False)
     result = []
-    tk.Label(root, text='Escolha como executar a IA local', font=('', 15)).pack(pady=12)
+    tk.Label(root, text='Escolha onde a Aurora processa suas mensagens', font=('', 15)).pack(pady=12)
+    tk.Radiobutton(root, text='Nuvem / Gemini — padrão, sem carregar motor local', variable=kind, value='gemini').pack(anchor='w', padx=18)
     tk.Radiobutton(root, text='Motor integrado llama.cpp (a Aurora inicia e encerra)', variable=kind, value='llamacpp').pack(anchor='w', padx=18)
     tk.Radiobutton(root, text='Usar Ollama já instalado neste computador', variable=kind, value='ollama').pack(anchor='w', padx=18)
+    details = tk.Frame(root)
+    details.pack(fill='both', expand=True, padx=18, pady=8)
+    cloud = tk.LabelFrame(details, text='Nuvem / Gemini', padx=10, pady=8)
+    tk.Label(cloud, text='Identificador de um modelo disponível na sua conta do AI Studio').pack(anchor='w')
+    model_entry = tk.Entry(cloud, textvariable=gemini_model)
+    model_entry.pack(fill='x')
+    tk.Label(cloud, text='Chave Gemini (deixe vazia para manter a chave já cadastrada)').pack(anchor='w')
+    key_entry = tk.Entry(cloud, textvariable=api_key, show='•')
+    key_entry.pack(fill='x')
+    tk.Label(cloud, text='A chave fica no Gerenciador de Credenciais deste usuário do Windows. Nunca é mostrada aqui.', wraplength=640, justify='left').pack(anchor='w', pady=4)
+    tk.Label(cloud, text=CLOUD_NOTICE, wraplength=640, justify='left').pack(anchor='w')
+    consent = tk.Checkbutton(cloud, text='Li o aviso e autorizo ativar a nuvem com este modelo.', variable=accepted)
+    consent.pack(anchor='w', pady=4)
+    def remove_key():
+        if not messagebox.askyesno('Remover chave Gemini', 'Remover somente a chave Aurora/Gemini/APIKey do cofre do Windows? O histórico será preservado.'):
+            return
+        try:
+            WindowsCredentialStore().delete()
+            api_key.set('')
+            messagebox.showinfo('Chave removida', 'Cadastre uma chave antes de usar Gemini novamente.')
+        except CredentialError as exc:
+            messagebox.showerror('Credenciais', str(exc))
+    remove_button = tk.Button(cloud, text='Remover chave cadastrada', command=remove_key)
+    remove_button.pack(anchor='w')
+    llama = tk.LabelFrame(details, text='llama.cpp — execução local', padx=10, pady=8)
     for label, variable, types in [('Executável llama-server', binary, [('Executável', '*.exe'), ('Todos', '*')]),
                                     ('Modelo local GGUF', model, [('Modelo GGUF', '*.gguf')])]:
-        row = tk.Frame(root)
-        row.pack(fill='x', padx=18, pady=7)
+        row = tk.Frame(llama)
+        row.pack(fill='x', pady=7)
         tk.Label(row, text=label, width=23, anchor='w').pack(side='left')
-        tk.Entry(row, textvariable=variable).pack(side='left', expand=True, fill='x')
-        tk.Button(row, text='Escolher', command=lambda v=variable,t=types: v.set(filedialog.askopenfilename(filetypes=t) or v.get())).pack(side='right')
-    tk.Label(root, text='Modelo instalado no Ollama (apenas para a segunda opção)').pack(anchor='w', padx=18)
-    tk.Entry(root, textvariable=ollama).pack(fill='x', padx=18)
-    tk.Label(root, text='Perfil leve: contexto de 4096 tokens, até 768 tokens por resposta.\nModelos e motores são obtidos separadamente. Veja DESKTOP.md.', wraplength=590).pack(pady=12)
+        entry = tk.Entry(row, textvariable=variable)
+        entry.pack(side='left', expand=True, fill='x')
+        button = tk.Button(row, text='Escolher', command=lambda v=variable,t=types: v.set(filedialog.askopenfilename(filetypes=t) or v.get()))
+        button.pack(side='right')
+    ollama_frame = tk.LabelFrame(details, text='Ollama — execução local', padx=10, pady=8)
+    tk.Label(ollama_frame, text='Modelo já instalado no Ollama').pack(anchor='w')
+    tk.Entry(ollama_frame, textvariable=ollama).pack(fill='x')
+    tk.Label(root, text='O modo local nunca troca para nuvem sozinho.\nModelos e motores locais são obtidos separadamente. Veja DESKTOP.md.', wraplength=640).pack(pady=8)
     def save():
-        cfg = {'provider':kind.get(), 'binary':binary.get(), 'model_file':model.get(), 'model':ollama.get().strip()}
+        cfg = {'provider':kind.get(), 'binary':binary.get(), 'model_file':model.get(), 'model':ollama.get().strip(),
+               'gemini_model':gemini_model.get().strip(),
+               'cloud_notice_version':CLOUD_NOTICE_VERSION if accepted.get() else 0}
         try:
-            validate_config(cfg)
-        except ValueError as exc:
+            cfg = save_config(path, cfg, api_key.get().strip())
+        except (ValueError, CredentialError) as exc:
             messagebox.showerror('Confira a configuração', str(exc))
             return
-        temporary = path.with_suffix('.tmp')
-        temporary.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), 'utf-8')
-        temporary.replace(path)
+        except OSError:
+            messagebox.showerror('Configuração', 'Não foi possível salvar. A configuração anterior foi preservada; confira a chave no cofre antes de tentar novamente.')
+            return
+        api_key.set('')
         result.append(cfg)
         root.destroy()
     tk.Button(root, text='Salvar configuração', command=save).pack(pady=5)
+    def update_fields(*_):
+        for frame in (cloud, llama, ollama_frame):
+            frame.pack_forget()
+        {'gemini':cloud, 'llamacpp':llama, 'ollama':ollama_frame}[kind.get()].pack(fill='x')
+    kind.trace_add('write', update_fields)
+    update_fields()
     root.mainloop()
+    api_key.set('')
     return result[0] if result else None
 
 
 def validate_config(cfg):
     import re
-    if cfg.get('provider') not in {'ollama', 'llamacpp'}:
-        raise ValueError('Selecione um motor local.')
+    if not isinstance(cfg, dict) or cfg.get('provider') not in {'gemini', 'ollama', 'llamacpp'}:
+        raise ValueError('Selecione Nuvem/Gemini, llama.cpp ou Ollama.')
+    if any(name in cfg for name in ('api_key', 'GEMINI_API_KEY', 'key', 'token')):
+        raise ValueError('Credenciais não podem ficar em desktop.json. Remova esse campo e cadastre a chave no cofre do Windows.')
+    if cfg['provider'] == 'gemini':
+        if not isinstance(cfg.get('gemini_model'), str) or not re.fullmatch(r'[A-Za-z0-9._-]{1,100}', cfg['gemini_model']):
+            raise ValueError('Informe o identificador do modelo Gemini disponível na sua conta.')
+        if cfg.get('cloud_notice_version') != CLOUD_NOTICE_VERSION:
+            raise ValueError('Leia e aceite o aviso de privacidade em Configurar-Aurora.cmd antes de ativar a nuvem.')
     if cfg['provider'] == 'llamacpp':
         binary, model = Path(cfg.get('binary', '')), Path(cfg.get('model_file', ''))
         if not binary.is_file() or not model.is_file() or model.suffix.lower() != '.gguf':
             raise ValueError('Selecione o executável llama-server e um modelo .gguf existente.')
-    elif not re.fullmatch(r'[a-zA-Z0-9._:/-]{1,100}', cfg.get('model', '')):
+    elif cfg['provider'] == 'ollama' and not re.fullmatch(r'[a-zA-Z0-9._:/-]{1,100}', cfg.get('model', '')):
         raise ValueError('Informe o identificador do modelo instalado no Ollama.')
+
+
+def save_config(path, cfg, api_key='', store=None):
+    """Persist only allowlisted non-secret fields, never a credential fallback."""
+    validate_config(cfg)
+    clean = {'provider': cfg['provider']}
+    if cfg['provider'] == 'gemini':
+        clean.update(gemini_model=cfg['gemini_model'], cloud_notice_version=CLOUD_NOTICE_VERSION)
+        store = store if store is not None else WindowsCredentialStore()
+        if api_key:
+            store.write(api_key)
+        elif not store.read():
+            raise CredentialError('Cadastre sua chave Gemini no Gerenciador de Credenciais para ativar a nuvem.')
+    elif cfg['provider'] == 'llamacpp':
+        clean.update(binary=cfg['binary'], model_file=cfg['model_file'])
+    else:
+        clean['model'] = cfg['model']
+    temporary = path.with_suffix('.tmp')
+    try:
+        temporary.write_text(json.dumps(clean, ensure_ascii=False, indent=2), 'utf-8')
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return clean
+
+
+def settings_for_config(cfg, directory, local_url='http://127.0.0.1:11434', store=None):
+    from app.config import Settings
+    validate_config(cfg)
+    key = ''
+    if cfg['provider'] == 'gemini':
+        store = store if store is not None else WindowsCredentialStore()
+        key = store.read()
+        if not key:
+            raise CredentialError('Chave Gemini ausente. Abra Configurar-Aurora.cmd para cadastrá-la no cofre do Windows.')
+        model = cfg['gemini_model']
+    else:
+        model = 'aurora-local' if cfg['provider'] == 'llamacpp' else cfg['model']
+    return Settings(secrets.token_urlsafe(48), api_key=key, models=(model,),
+                    database=directory/'aurora.sqlite3', provider=cfg['provider'], local_url=local_url)
 
 
 def engine_command(cfg, port):
@@ -137,7 +228,6 @@ def desktop_app(settings, dist, ticket, port):
 
 def run(configure_only=False):
     import uvicorn
-    from app.config import Settings
     directory = data_directory()
     # OS lock prevents simultaneous desktop processes sharing the database/engine.
     lock = open(directory/'desktop.lock', 'a+b')
@@ -178,8 +268,7 @@ def run(configure_only=False):
                                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
             print('Carregando o modelo local. Aguarde a janela da Aurora...', flush=True)
             wait_for_engine(process, url)
-        settings = Settings(secrets.token_urlsafe(48), models=(model,), database=directory/'aurora.sqlite3',
-                            provider=cfg['provider'], local_url=url)
+        settings = settings_for_config(cfg, directory, url)
         ticket = secrets.token_urlsafe(48)
         # Bind first to avoid another process taking the API port before Uvicorn.
         sock = socket.socket()
@@ -221,5 +310,6 @@ if __name__ == '__main__':
         run(args.configure)
     except Exception as exc:
         # Config errors are local paths/status, never model prompts or API secrets.
-        print(f'Aurora não iniciou: {exc}', file=sys.stderr)
+        message = str(exc) if isinstance(exc, (CredentialError, ValueError, RuntimeError)) else 'Falha ao iniciar. Confira a instalação e a configuração.'
+        print(f'Aurora não iniciou: {message}', file=sys.stderr)
         sys.exit(1)

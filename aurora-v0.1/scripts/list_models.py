@@ -7,7 +7,7 @@ from app.config import Settings
 
 settings = Settings.load()
 if not settings.api_key:
-    raise SystemExit('Configure GEMINI_API_KEY em backend/.env primeiro.')
+    raise SystemExit('Cadastre a chave no cofre do Windows; em servidor não Windows, use GEMINI_API_KEY como segredo do ambiente. Não grave em .env.')
 try:
     with httpx.Client(timeout=30) as client:
         page = None

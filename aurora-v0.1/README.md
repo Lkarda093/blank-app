@@ -1,4 +1,6 @@
-# Aurora Desktop — prévia 0.7.0-desktop.1
+# Aurora Desktop — prévia 0.7.0-desktop.2
+
+**Correção 1:** três modos de IA e chave no cofre do Windows. Leia primeiro [DESKTOP.md](DESKTOP.md), [DECISOES.md](DECISOES.md) e [CONTEXTO_PARA_IA.md](CONTEXTO_PARA_IA.md). As instruções históricas abaixo sobre gravar a chave Gemini em `.env` estão substituídas: a versão atual recusa essa configuração.
 
 O projeto agora inclui uma primeira execução desktop local para Windows. [Instalação e limites](DESKTOP.md) · [Novo planejamento pessoal](docs/PLANO_DESKTOP.md) · [Componentes abertos](desktop/THIRD_PARTY.md).
 

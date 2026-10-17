@@ -13,6 +13,7 @@ from ..memory.routes import preference_instruction
 from ..data.routes import download
 from ..documents.routes import selected_context, answer_sources, DOC_INSTRUCTION
 from ..workspace.routes import context_instruction, read_context
+from ..cloud_policy import CLOUD_NOTICE
 import json
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_owner)])
@@ -69,11 +70,11 @@ def config(request: Request):
     s = request.app.state.settings
     with connect(s.database) as db:
         workspace_id=db.execute("SELECT value FROM metadata WHERE key='workspace_id'").fetchone()[0]
-    return {"workspace_id":workspace_id,"version": "0.7.0-desktop.1", "provider": "Gemini" if s.provider == "gemini" else ("Ollama local" if s.provider == "ollama" else "llama.cpp local"), "local_mode": s.provider != "gemini", "models": s.models,
+    return {"workspace_id":workspace_id,"version": "0.7.0-desktop.2", "provider": "Gemini" if s.provider == "gemini" else ("Ollama local" if s.provider == "ollama" else "llama.cpp local"), "local_mode": s.provider != "gemini", "models": s.models,
             "free_fallback_models": s.free_fallback_models, "fallback_max_models": 3,
             "configured": bool(s.models and (s.provider != "gemini" or s.api_key)), "max_message_chars": 8000,
             "context_turns": 10, "context_chars": 6000 if s.provider != "gemini" else 40000,
-            "cost_notice": "Processamento no seu computador. O modo local não troca para serviços na nuvem." if s.provider != "gemini" else "A API pode ter cotas e custos. O aplicativo não consulta saldo nem garante uso gratuito. Confira seu projeto no Google AI Studio."}
+            "cost_notice": "Processamento no seu computador. O modo local não troca para serviços na nuvem." if s.provider != "gemini" else CLOUD_NOTICE}
 
 @router.get("/conversations")
 def list_conversations(request: Request, offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=100), q: str = Query("", max_length=200), project_id: UUID | None = None):
