@@ -1,17 +1,30 @@
 """Server-only configuration; paths are independent of the launch directory."""
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 
+
+def is_windows():
+    return os.name == 'nt'
+
+
+def load_gemini_key():
+    if dotenv_values(ROOT / '.env').get('GEMINI_API_KEY'):
+        raise ValueError('Remova GEMINI_API_KEY de backend/.env. Chaves não podem ficar em arquivo.')
+    if is_windows():
+        from .credentials import WindowsCredentialStore
+        return WindowsCredentialStore().read() or ''
+    return os.getenv('GEMINI_API_KEY', '')
+
 @dataclass(frozen=True)
 class Settings:
-    owner_token: str
-    api_key: str = ""
+    owner_token: str = field(repr=False)
+    api_key: str = field(default="", repr=False)
     models: tuple[str, ...] = ()
     database: Path = ROOT / "data" / "aurora.sqlite3"
 
@@ -30,6 +43,9 @@ class Settings:
 
     @classmethod
     def load(cls):
+        # Refuse the disk-backed key before dotenv could copy it to the environment.
+        if dotenv_values(ROOT / '.env').get('GEMINI_API_KEY'):
+            raise ValueError('Remova GEMINI_API_KEY de backend/.env. Use o cofre do Windows ou um segredo do ambiente no servidor. Nenhuma chave foi movida ou apagada automaticamente.')
         load_dotenv(ROOT / ".env")
         provider = os.getenv("AURORA_PROVIDER", "gemini")
         if provider != "gemini":
@@ -52,4 +68,4 @@ class Settings:
         if len(token) < 32:
             raise ValueError("Configure AURORA_OWNER_TOKEN com pelo menos 32 caracteres em backend/.env.")
         path = Path(os.getenv("AURORA_DB_PATH", "data/aurora.sqlite3"))
-        return cls(token, os.getenv("GEMINI_API_KEY", ""), models, path if path.is_absolute() else ROOT / path, fallback)
+        return cls(token, load_gemini_key(), models, path if path.is_absolute() else ROOT / path, fallback)

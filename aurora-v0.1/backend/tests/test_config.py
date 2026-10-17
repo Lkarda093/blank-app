@@ -11,7 +11,6 @@ def test_loads_backend_env_from_another_working_directory(tmp_path, monkeypatch)
     backend = tmp_path / "backend"
     backend.mkdir()
     (backend / ".env").write_text(
-        "GEMINI_API_KEY=test-key\n"
         "GEMINI_MODELS=test-model\n"
         "AURORA_OWNER_TOKEN='test-owner-token-with-more-than-32-characters'\n"
         "AURORA_DB_PATH=data/aurora.sqlite3\n"
@@ -20,6 +19,8 @@ def test_loads_backend_env_from_another_working_directory(tmp_path, monkeypatch)
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(config, "ROOT", backend)
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('GEMINI_API_KEY', 'test-key')
+    monkeypatch.setattr(config, 'is_windows', lambda: False)
     settings = config.Settings.load()
     assert settings.api_key == "test-key"
     assert settings.models == ("test-model",)
