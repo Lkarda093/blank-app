@@ -10,7 +10,7 @@ export default function Preferences({ run, busy, onSaved = () => {} }) {
   const [loadError, setLoadError] = useState('');
   useEffect(() => { let alive = true; api('/preferences').then(data => { if(alive) {setValues(data.saved || empty);setSaved(data.saved);setReady(true);} }).catch(error => {if(alive) setLoadError(error.message);}); return () => {alive=false;}; }, []);
   function change(key, value) { setValues(old => ({ ...old, [key]: value })); setConsent(false); setNotice(''); }
-  return <div className="settings-card"><h2>Preferências pessoais</h2><p className="muted">Você decide o que Aurora lembra entre conversas. As informações salvas abaixo serão enviadas ao Gemini junto das próximas mensagens.</p>
+  return <div className="settings-card"><h2>Preferências pessoais</h2><p className="muted">Você decide o que Aurora lembra entre conversas. As informações salvas abaixo serão enviadas ao modelo selecionado junto das próximas mensagens.</p>
     {loadError && <p role="alert" className="error">{loadError}</p>}{notice && <p role="status" className="success">{notice}</p>}
     <form onSubmit={event => { event.preventDefault(); run(async () => { const result = await api('/preferences', null, {method:'PUT',body:JSON.stringify({...values,consent})}); setSaved(result.saved); onSaved(result.saved); setValues(result.saved); setConsent(false); setNotice('Preferências salvas. Serão usadas a partir da próxima mensagem.'); }); }}>
       <label className="field-label" htmlFor="pref-name">Como você quer ser chamado?</label><input id="pref-name" className="text-input" value={values.name} maxLength={80} onChange={e => change('name',e.target.value)} disabled={!ready || busy} />

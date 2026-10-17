@@ -1,3 +1,9 @@
+# Aurora Desktop — prévia 0.7.0-desktop.1
+
+O projeto agora inclui uma primeira execução desktop local para Windows. [Instalação e limites](DESKTOP.md) · [Novo planejamento pessoal](docs/PLANO_DESKTOP.md) · [Componentes abertos](desktop/THIRD_PARTY.md).
+
+O histórico abaixo descreve as versões web anteriores.
+
 # Aurora 0.6.1
 
 Chat com resposta progressiva, anexos compactos e limites sob demanda. [Atualizar para 0.6.1](docs/ATUALIZAR_0.6.1.md). Sem novas dependências ou migração de dados nesta correção.

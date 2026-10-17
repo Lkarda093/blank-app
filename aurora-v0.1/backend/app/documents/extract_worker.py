@@ -11,6 +11,9 @@ class DocumentError(ValueError):
     pass
 
 def main():
+    # Keep the subprocess protocol UTF-8 on Windows as well as Linux.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     try:
         import resource
         resource.setrlimit(resource.RLIMIT_AS,(256*1024*1024,256*1024*1024))

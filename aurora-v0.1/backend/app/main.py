@@ -9,6 +9,7 @@ from .config import Settings
 from .database import initialize
 from .conversations.routes import router
 from .providers.gemini import GeminiProvider
+from .providers.local import LocalProvider
 from .auth.routes import router as auth_router
 from .memory.routes import router as memory_router
 from .data.routes import router as data_router
@@ -23,11 +24,13 @@ def create_app(settings: Settings | None = None, provider=None):
         initialize(app.state.settings.database)
         app.state.send_lock = asyncio.Lock()
         app.state.login_failures = []
-        async with httpx.AsyncClient(timeout=httpx.Timeout(60, connect=10), follow_redirects=False) as client:
-            app.state.provider = provider or GeminiProvider(client, app.state.settings.api_key)
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60, connect=10), follow_redirects=False,
+                                     trust_env=app.state.settings.provider == 'gemini') as client:
+            s = app.state.settings
+            app.state.provider = provider or (GeminiProvider(client, s.api_key) if s.provider == 'gemini' else LocalProvider(client, s.provider, s.local_url))
             yield
 
-    app = FastAPI(title="Aurora API", version="0.6.1", lifespan=lifespan,
+    app = FastAPI(title="Aurora API", version="0.7.0-desktop.1", lifespan=lifespan,
                   description="API pessoal. Use Authorize com o token do proprietário. Um único processo/worker.")
     app.include_router(router)
     app.include_router(auth_router)
@@ -57,7 +60,7 @@ def create_app(settings: Settings | None = None, provider=None):
 
     @app.get("/api/health")
     def health():
-        return {"status": "ok", "version": "0.6.1"}
+        return {"status": "ok", "version": "0.7.0-desktop.1"}
 
     return app
 

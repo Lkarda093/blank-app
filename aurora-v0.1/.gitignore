@@ -16,3 +16,9 @@ backups/
 .DS_Store
 playwright-report/
 test-results/
+
+.venv-desktop/
+desktop/runtime/
+desktop/models/
+build/
+*.spec

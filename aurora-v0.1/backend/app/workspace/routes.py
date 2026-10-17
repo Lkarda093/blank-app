@@ -199,7 +199,7 @@ async def preview_summary(cid:UUID,payload:SummaryRequest,request:Request):
         selected=[];size=len(old['summary'])
         for row in rows[:100]:
             text=f"Você: {row['user_text']}\nAurora: {row['assistant_text']}"
-            if size+len(text)>30000: break
+            if size+len(text)>(4500 if state.settings.provider != 'gemini' else 30000): break
             selected.append((row['id'],text));size+=len(text)
         if not selected: raise HTTPException(400,'Não há novas mensagens resumíveis neste limite. Edite o resumo manualmente se necessário.')
         content='Resumo anterior:\n'+old['summary']+'\n\nMensagens:\n'+'\n\n'.join(t for _,t in selected)

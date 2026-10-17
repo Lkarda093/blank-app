@@ -69,11 +69,11 @@ def config(request: Request):
     s = request.app.state.settings
     with connect(s.database) as db:
         workspace_id=db.execute("SELECT value FROM metadata WHERE key='workspace_id'").fetchone()[0]
-    return {"workspace_id":workspace_id,"version": "0.6.1", "provider": "Gemini", "models": s.models,
+    return {"workspace_id":workspace_id,"version": "0.7.0-desktop.1", "provider": "Gemini" if s.provider == "gemini" else ("Ollama local" if s.provider == "ollama" else "llama.cpp local"), "local_mode": s.provider != "gemini", "models": s.models,
             "free_fallback_models": s.free_fallback_models, "fallback_max_models": 3,
-            "configured": bool(s.api_key and s.models), "max_message_chars": 8000,
-            "context_turns": 10, "context_chars": 40000,
-            "cost_notice": "A API pode ter cotas e custos. O aplicativo não consulta saldo nem garante uso gratuito. Confira seu projeto no Google AI Studio."}
+            "configured": bool(s.models and (s.provider != "gemini" or s.api_key)), "max_message_chars": 8000,
+            "context_turns": 10, "context_chars": 6000 if s.provider != "gemini" else 40000,
+            "cost_notice": "Processamento no seu computador. O modo local não troca para serviços na nuvem." if s.provider != "gemini" else "A API pode ter cotas e custos. O aplicativo não consulta saldo nem garante uso gratuito. Confira seu projeto no Google AI Studio."}
 
 @router.get("/conversations")
 def list_conversations(request: Request, offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=100), q: str = Query("", max_length=200), project_id: UUID | None = None):
@@ -162,7 +162,7 @@ async def delete_conversation(cid: UUID, request: Request, confirm: bool = False
 async def generate_message(cid: UUID, payload: SendMessage, request: Request, emit=None):
     state = request.app.state
     if payload.model not in state.settings.models:
-        raise HTTPException(400, "Selecione um modelo autorizado em GEMINI_MODELS no servidor.")
+        raise HTTPException(400, "Selecione um modelo autorizado na configuração da Aurora.")
     if state.send_lock.locked():
         raise HTTPException(409, "Há uma resposta em andamento. Aguarde e tente novamente.")
     async with state.send_lock:
@@ -191,11 +191,12 @@ async def generate_message(cid: UUID, payload: SendMessage, request: Request, em
             document_body, documents_used, allowed_sources = selected_context(db,cid,payload.document_ids,payload.documents_consent)
             personalization = preference_instruction(db) + workspace_instruction + (DOC_INSTRUCTION if documents_used else '')
             turns = list(reversed(db.execute("SELECT * FROM turns WHERE conversation_id=? AND id>? ORDER BY id DESC LIMIT 10", (str(cid), workspace['through_id'] if workspace['use_memory'] and workspace['summary'] else 0)).fetchall()))
+        context_limit = 6000 if state.settings.provider != "gemini" else 40000
         # Keep full pairs and bound cost; old history remains in SQLite.
-        while turns and sum(len(t["user_text"]) + len(t["assistant_text"]) for t in turns) + len(payload.content) + len(document_body) + len(personalization) > 40000:
+        while turns and sum(len(t["user_text"]) + len(t["assistant_text"]) for t in turns) + len(payload.content) + len(document_body) + len(personalization) > context_limit:
             turns.pop(0)
-        if len(payload.content) + len(document_body) + len(personalization) > 40000:
-            raise HTTPException(400,"O contexto excede 40 mil caracteres. Reduza documentos, pergunta ou memórias ativas.")
+        if len(payload.content) + len(document_body) + len(personalization) > context_limit:
+            raise HTTPException(400,f"O contexto excede {context_limit} caracteres neste modo. Reduza documentos, pergunta ou memórias ativas.")
         context = messages_from_turns(turns) + [{"role": "user", "content": payload.content + document_body}]
         models = [payload.model]
         approved = state.settings.free_fallback_models
@@ -210,14 +211,14 @@ async def generate_message(cid: UUID, payload: SendMessage, request: Request, em
                     tried.append(used_model)
                     try:
                         if emit:
-                            await emit({'type':'status','model':used_model,'detail':'Tentando outro modelo…' if len(tried)>1 else 'Aguardando o Gemini…'})
+                            await emit({'type':'status','model':used_model,'detail':'Tentando outro modelo…' if len(tried)>1 else ('Aguardando o modelo local…' if state.settings.provider != 'gemini' else 'Aguardando o Gemini…')})
                         answer=''
                         if emit and hasattr(state.provider,'stream'):
                             async for chunk in state.provider.stream(used_model,context,personalization=personalization):
                                 answer+=chunk
                                 await emit({'type':'delta','text':chunk,'model':used_model})
                             answer=answer.strip()
-                            if not answer:raise ProviderError(502,'O Gemini não retornou texto.')
+                            if not answer:raise ProviderError(502,'O modelo não retornou texto.')
                         else:
                             answer = await state.provider.generate(used_model, context, personalization=personalization)
                         break
@@ -230,7 +231,7 @@ async def generate_message(cid: UUID, payload: SendMessage, request: Request, em
                                 detail = "Nenhum dos modelos autorizados tentados respondeu: " + ", ".join(tried) + ". Último erro: " + exc.message
                             raise ProviderError(exc.status, detail) from None
         except TimeoutError:
-            raise HTTPException(504, "A troca de modelos demorou demais. Confira o histórico antes de reenviar; chamadas podem ter consumido cota.") from None
+            raise HTTPException(504, "A resposta demorou demais. Confira o histórico e tente uma pergunta menor.") from None
         except ProviderError as exc:
             raise HTTPException(exc.status, exc.message) from None
         sources,source_warning=answer_sources(answer,allowed_sources) if documents_used else ([], '')

@@ -1,3 +1,7 @@
+# Planejamento atualizado
+
+A prioridade mudou para programa desktop pessoal com componentes abertos e modelos locais. A sequência atual está em [PLANO_DESKTOP.md](PLANO_DESKTOP.md). As etapas futuras numeradas abaixo são o plano web anterior, mantido como registro, e não a ordem vigente.
+
 # Planejamento da Aurora
 
 ## Entregue até 0.6

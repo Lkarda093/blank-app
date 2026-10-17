@@ -44,9 +44,9 @@ class TurnRecord(Record):
     request_id: UUID
     user_text: str = Field(min_length=1, max_length=8000)
     assistant_text: str = Field(min_length=1, max_length=100000)
-    model: str = Field(min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9._-]+$")
+    model: str = Field(min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9._:/-]+$")
     created_at: str = Field(max_length=50)
-    requested_model: str | None = Field(default=None, max_length=100, pattern=r"^[a-zA-Z0-9._-]+$")
+    requested_model: str | None = Field(default=None, max_length=100, pattern=r"^[a-zA-Z0-9._:/-]+$")
 
 class DocumentRecord(Record):
     id: UUID
